@@ -1,0 +1,4 @@
+designs/
+.venv/
+.vscode/
+__pycache__/
