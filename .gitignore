@@ -2,3 +2,7 @@ designs/
 .venv/
 .vscode/
 __pycache__/
+BrickGPT/
+ShapeNetCore/
+StableText2Brick/
+.DS_Store
