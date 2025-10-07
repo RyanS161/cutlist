@@ -6,6 +6,7 @@ import pandas as pd
 import os
 from design import visualize
 from copy import deepcopy
+import json
 
 def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False):
     # Rotate mesh to stand upright
@@ -94,3 +95,24 @@ def get_and_transform_partnet_meshes(dir):
         transformed_meshes.append(new_mesh)
 
     return transformed_meshes
+
+
+def get_model_data_from_partnet(dir):
+    model_data = []
+    for folder in os.listdir(dir):
+        model_dir = os.path.join(dir, folder)
+        part_count = len(os.listdir(os.path.join(model_dir, "objs")))
+        meta_data = json.load(open(os.path.join(model_dir, "meta.json"), 'r'))
+        model_cat = meta_data.get("model_cat", "")
+        model_id = meta_data.get("model_id", "")
+        model_data.append({
+            "model_dir": folder,
+            "part_count": part_count,
+            "model_cat": model_cat,
+            "model_id": model_id
+        })
+    # save to csv
+    df = pd.DataFrame(model_data)
+    df.to_csv(os.path.join(dir, "_model_data.csv"), index=False)
+    return model_data
+    

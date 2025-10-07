@@ -85,77 +85,77 @@ def score_points_to_box(points, box_x, box_y, box_z):
     # Idea three - compare the dimensions with the ideal dimensions of a fitted primitive
 
 
-def ransac_for_pointcloud(sample):
-    N_SAMPLED_POINTS = 100
-    K_ITERATIONS = 250
-    SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
-    original_pc = sample["point_cloud"]
+# def ransac_for_pointcloud(sample):
+#     N_SAMPLED_POINTS = 100
+#     K_ITERATIONS = 250
+#     SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+#     original_pc = sample["point_cloud"]
     
-    # visualize(scaled_pcs, colors=['red', 'green', 'blue', 'purple'], filename=f"designs/pointcloud_scaled_{sample['category']}_{sample['object_id']}.png")
+#     # visualize(scaled_pcs, colors=['red', 'green', 'blue', 'purple'], filename=f"designs/pointcloud_scaled_{sample['category']}_{sample['object_id']}.png")
 
 
-    best_pc, best_part, best_avg_distance = None, None, np.inf
-    for scale in tqdm(SCALES, desc=f"Scaling for {sample['category']} {sample['object_id']}"):
-        target_pc = original_pc.scale(scale, point=(0, 0, 0))
-        points = target_pc.points
-        for _ in range(K_ITERATIONS):
-            # Pick N random points
-            sampled_indices = np.random.choice(
-                points.shape[0], N_SAMPLED_POINTS, replace=False
-            )
-            shape_id = np.random.randint(0, len(Design.PART_LIBRARY))
-            shape = Design.PART_LIBRARY[shape_id]
-            sampled_points = points[sampled_indices]
+#     best_pc, best_part, best_avg_distance = None, None, np.inf
+#     for scale in tqdm(SCALES, desc=f"Scaling for {sample['category']} {sample['object_id']}"):
+#         target_pc = original_pc.scale(scale, point=(0, 0, 0))
+#         points = target_pc.points
+#         for _ in range(K_ITERATIONS):
+#             # Pick N random points
+#             sampled_indices = np.random.choice(
+#                 points.shape[0], N_SAMPLED_POINTS, replace=False
+#             )
+#             shape_id = np.random.randint(0, len(Design.PART_LIBRARY))
+#             shape = Design.PART_LIBRARY[shape_id]
+#             sampled_points = points[sampled_indices]
 
-            centroid, rotation = pca_from_points(sampled_points)
+#             centroid, rotation = pca_from_points(sampled_points)
 
-            # Create design part aligned with principal components
-            part = AssembledComponent(
-                part_id=shape_id,
-                translation=centroid,
-                rotation=rotation,
-            )
+#             # Create design part aligned with principal components
+#             part = AssembledComponent(
+#                 part_id=shape_id,
+#                 translation=centroid,
+#                 rotation=rotation,
+#             )
 
-            axis_aligned_pc = points_centered @ np.linalg.inv(eigenvectors)
+#             axis_aligned_pc = points_centered @ np.linalg.inv(eigenvectors)
 
-            if type(shape) is Box:
-                box_x, box_y, box_z = shape.x_length, shape.y_length, shape.z_length
-                avg_distance = np.mean(distance_points_to_box(axis_aligned_pc, box_x, box_y, box_z))
-            elif type(shape) is Cylinder:
-                cylinder_axis = shape.axis
-                cylinder_radius = shape.radius
-                cylinder_height = shape.height
-                avg_distance = np.average(distance_points_to_cylinder(axis_aligned_pc, cylinder_axis, cylinder_radius, cylinder_height))
-                # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
-            else:
-                print("Unknown shape type")
+#             if type(shape) is Box:
+#                 box_x, box_y, box_z = shape.x_length, shape.y_length, shape.z_length
+#                 avg_distance = np.mean(distance_points_to_box(axis_aligned_pc, box_x, box_y, box_z))
+#             elif type(shape) is Cylinder:
+#                 cylinder_axis = shape.axis
+#                 cylinder_radius = shape.radius
+#                 cylinder_height = shape.height
+#                 avg_distance = np.average(distance_points_to_cylinder(axis_aligned_pc, cylinder_axis, cylinder_radius, cylinder_height))
+#                 # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
+#             else:
+#                 print("Unknown shape type")
 
-            # Calculate distances from points to mesh surface
-            # mesh_points = part.mesh.triangulate().points
-            # kdtree = ckdtree.cKDTree(mesh_points)
-            # distances, _ = kdtree.query(points)
+#             # Calculate distances from points to mesh surface
+#             # mesh_points = part.mesh.triangulate().points
+#             # kdtree = ckdtree.cKDTree(mesh_points)
+#             # distances, _ = kdtree.query(points)
 
-            # avg_distance = np.mean(distances)
-            if avg_distance < best_avg_distance:
-                best_avg_distance = avg_distance
-                best_part = part
-                best_pc = target_pc
-                # visualize(
-                #     [best_pc, best_part.mesh],
-                #     colors=["red", "tan"],
-                #     filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
-                # )
-                # time.sleep(0.5)
+#             # avg_distance = np.mean(distances)
+#             if avg_distance < best_avg_distance:
+#                 best_avg_distance = avg_distance
+#                 best_part = part
+#                 best_pc = target_pc
+#                 # visualize(
+#                 #     [best_pc, best_part.mesh],
+#                 #     colors=["red", "tan"],
+#                 #     filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
+#                 # )
+#                 # time.sleep(0.5)
 
-    if best_part is not None:
-        # Visualize the best part
-        visualize(
-            [best_pc, best_part.mesh],
-            colors=["red", "tan"],
-            filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
-        )
-    else:
-        print("No part found")
+#     if best_part is not None:
+#         # Visualize the best part
+#         visualize(
+#             [best_pc, best_part.mesh],
+#             colors=["red", "tan"],
+#             filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
+#         )
+#     else:
+#         print("No part found")
 
 
 def arbitrary_primitives_strategy(sample):
@@ -163,7 +163,7 @@ def arbitrary_primitives_strategy(sample):
     fitted_meshes = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
-        centroid, rotation, bounds = pca_from_points(mesh.points)
+        centroid, rotation, bounds = pca_align_with_search(mesh.points)
 
         # bounding_box = mesh.bounds
         # dims = [bounding_box[1] - bounding_box[0], bounding_box[3] - bounding_box[2], bounding_box[5] - bounding_box[4]]
@@ -201,7 +201,7 @@ def arbitrary_length_strategy(sample):
         scaled_meshes = [mesh.scale(scale) for mesh in meshes]
         scale_meshes = []
         for mesh in scaled_meshes:
-            centroid, rotation, bounds = pca_from_points(mesh.points)
+            centroid, rotation, bounds = pca_align_with_search(mesh.points)
             best_part, best_avg_distance = None, np.inf
             for shape_id, shape in Design.PART_LIBRARY.items():
                 base_shape = Design.PART_LIBRARY[shape_id]
@@ -240,7 +240,7 @@ def our_primitives_strategy(sample):
         scaled_meshes = [mesh.scale(scale) for mesh in meshes]
         scale_meshes = []
         for mesh in scaled_meshes:
-            centroid, rotation, bounds = pca_from_points(mesh.points)
+            centroid, rotation, bounds = pca_align_with_search(mesh.points)
             best_part, best_avg_distance = None, np.inf
             for shape_id, shape in Design.PART_LIBRARY.items():
                 avg_distance = score_mesh_fit(shape, mesh.points, rotation)
@@ -285,66 +285,49 @@ def score_mesh_fit(centered_mesh, points, rotation):
 
     return score
 
-def pca_from_points(points):
-    centroid = np.mean(points, axis=0)
-    points_centered = points - centroid
-    covariance = points_centered.T @ points_centered
-    # EIGENDECOMPOSITION
-    eigenvalues, eigenvectors = np.linalg.eig(covariance)
-    # Sort eigenvectors by eigenvalues in descending order
-    sorted_indices = np.argsort(eigenvalues)[::-1]
-    eigenvalues = eigenvalues[sorted_indices]
-    normalized_eigenvalues = eigenvalues / np.sum(eigenvalues)
-    # check if two eigenvalues are very close together
-    rolled_eigenvalues = np.roll(normalized_eigenvalues, 1)
-    close_indices = np.where(np.isclose(normalized_eigenvalues, rolled_eigenvalues, atol=1e-3))[0]
-    former_eigenvectors = eigenvectors.copy()
-    for idx in close_indices:
-        idx = (idx + 1) % 3
-        print(f"Close eigenvalues: {normalized_eigenvalues} at index {idx}")
-        # rotate the two eigenvectors by 45 degrees
-        c, s = np.cos(np.pi/4), np.sin(np.pi/4)
-        R_45 = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-        eigenvectors[:, idx] = R_45 @ eigenvectors[:, idx]
-        eigenvectors[:, (idx + 1) % 3] = R_45 @ eigenvectors[:, (idx + 1) % 3]
+# def pca_from_points(points):
+#     centroid = np.mean(points, axis=0)
+#     points_centered = points - centroid
+#     covariance = points_centered.T @ points_centered
+#     # EIGENDECOMPOSITION
+#     eigenvalues, eigenvectors = np.linalg.eig(covariance)
+#     # Sort eigenvectors by eigenvalues in descending order
+#     sorted_indices = np.argsort(eigenvalues)[::-1]
+#     eigenvalues = eigenvalues[sorted_indices]
+#     normalized_eigenvalues = eigenvalues / np.sum(eigenvalues)
 
-    # Correct for non-positive determinant (reflection)
-    if np.linalg.det(eigenvectors) < 0:
-        eigenvectors[:, 2] *= -1
+#     # Correct for non-positive determinant (reflection)
+#     if np.linalg.det(eigenvectors) < 0:
+#         eigenvectors[:, 2] *= -1
 
-    rotation = R.from_matrix(eigenvectors)
+#     rotation = R.from_matrix(eigenvectors)
 
-    # get bounding box of normalized points:
-    points_normalized = points_centered @ eigenvectors
-    min_bounds = np.min(points_normalized, axis=0)
-    max_bounds = np.max(points_normalized, axis=0)
-    x_length, y_length, z_length = max_bounds - min_bounds
+#     # get bounding box of normalized points:
+#     points_normalized = points_centered @ eigenvectors
+#     min_bounds = np.min(points_normalized, axis=0)
+#     max_bounds = np.max(points_normalized, axis=0)
+#     x_length, y_length, z_length = max_bounds - min_bounds
     
-    # Visualization of PCA result
-    pc = pv.PolyData(points)
-    big_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 0], scale=50)
-    med_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 1], scale=30)
-    small_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 2], scale=10)
-    p_big_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 0], scale=50)
-    p_med_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 1], scale=30)
-    p_small_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 2], scale=10)
+#     # Visualization of PCA result
+#     # pc = pv.PolyData(points)
+#     # big_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 0], scale=x_length/2)
+#     # med_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 1], scale=y_length/2)
+#     # small_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 2], scale=z_length/2)
 
-    visualize([pc, p_big_arrow, p_med_arrow, p_small_arrow, big_arrow, med_arrow, small_arrow], colors=['black', 'red', 'blue', 'green', 'yellow', 'yellow', 'yellow'], off_screen=False)
+#     # visualize([pc, big_arrow, med_arrow, small_arrow], colors=['black', 'red', 'blue', 'green'], off_screen=False)
 
-
-    return centroid, rotation, (x_length, y_length, z_length)
+#     return centroid, rotation, (x_length, y_length, z_length)
 
 
-def pca_align_with_search(points, n_steps=360):
+def pca_align_with_search(points, n_steps=180):
     """
     Align a cuboid-like point cloud to axes robustly when two eigenvalues are similar.
     Strategy:
       1. center points
-      2. PCA -> use first eigenvector as main axis (stable)
-      3. rotate points to make first axis equal to global x-axis
-      4. search angles theta in [0, 180) rotating around x axis to find theta that
-         minimizes axis-aligned bounding box volume
-      5. return aligned points and the full rotation matrix to get back to original frame
+      2. PCA -> identify which two eigenvalues are most similar
+      3. rotate points to align the stable axis (orthogonal to similar eigenvalues) with a coordinate axis
+      4. search angles theta around the stable axis to minimize bounding box volume
+      5. return aligned points and the full rotation matrix
 
     points: (N,3) numpy array
     n_steps: number of angle samples to try (increase for more precision)
@@ -361,63 +344,105 @@ def pca_align_with_search(points, n_steps=360):
     eigvecs = eigvecs[:, idx]
     eigvals = eigvals[idx]
 
-    # Choose principal axis = eigvecs[:,0]
-    main_axis = eigvecs[:, 0]
+    # Ensure right-handed coordinate system
+    if np.linalg.det(eigvecs) < 0:
+        eigvecs[:, -1] *= -1
 
-    # Build rotation R1 that maps main_axis -> x-axis [1,0,0]
-    # Use rotation that maps unit vector a -> b: axis = cross(a,b), angle = acos(dot(a,b))
-    a = main_axis / np.linalg.norm(main_axis)
-    b = np.array([1.0, 0.0, 0.0])
+    # Find which two eigenvalues are most similar
+    # Compare ratios between consecutive eigenvalues
+    ratio_01 = abs(eigvals[0] - eigvals[1]) / (eigvals[0] + 1e-10)  # similarity between 1st and 2nd
+    ratio_12 = abs(eigvals[1] - eigvals[2]) / (eigvals[1] + 1e-10)  # similarity between 2nd and 3rd
+
+    if ratio_01 < ratio_12:
+        # eigenvalues 0 and 1 are most similar, so axis 2 is the stable one
+        stable_axis_idx = 2
+        target_direction = np.array([0.0, 0.0, 1.0])  # align stable axis with z
+    else:
+        # eigenvalues 1 and 2 are most similar, so axis 0 is the stable one
+        stable_axis_idx = 0
+        target_direction = np.array([1.0, 0.0, 0.0])  # align stable axis with x
+
+    stable_axis = eigvecs[:, stable_axis_idx]
+
+    # Build rotation R1 that maps stable_axis -> target_direction
+    a = stable_axis / np.linalg.norm(stable_axis)
+    b = target_direction
     v = np.cross(a, b)
     s = np.linalg.norm(v)
     c = np.dot(a, b)
+    
     if s < 1e-8:
         # already aligned or anti-parallel
         if c > 0:
             R1 = np.eye(3)
         else:
-            # 180 deg: rotate about any axis orthogonal to a, e.g., y-axis
-            R1 = np.array([[-1,0,0],[0,-1,0],[0,0,1]])
+            # 180 deg rotation - choose appropriate rotation axis
+            if stable_axis_idx == 2:  # rotating around z, so rotate about x or y
+                R1 = np.array([[-1,0,0],[0,-1,0],[0,0,1]])
+            else:  # rotating around x, so rotate about y or z
+                R1 = np.array([[-1,0,0],[0,1,0],[0,0,-1]])
     else:
         vx = np.array([[0, -v[2], v[1]],
                        [v[2], 0, -v[0]],
                        [-v[1], v[0], 0]])
         R1 = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
 
-    # rotate points so main axis aligns with x
+    # rotate points so stable axis aligns with target direction
     pts_r = (R1 @ pts_c.T).T
 
-    # We now have ambiguity in rotation around x axis.
-    # Search theta in [0, pi) (180 deg) because 180 repeats
-    thetas = np.linspace(0, np.pi, n_steps, endpoint=False)
+    # Search rotation around the stable axis
+    thetas = np.linspace(-np.pi/4, np.pi/4, n_steps, endpoint=False)
     best_theta = 0.0
     best_vol = np.inf
     best_rot = np.eye(3)
 
     for theta in thetas:
-        # rotation about x axis by theta
-        ct = np.cos(theta); st = np.sin(theta)
-        Rx = np.array([[1, 0, 0],
-                       [0, ct, -st],
-                       [0, st,  ct]])
-        pts_candidate = (Rx @ pts_r.T).T
+        ct = np.cos(theta)
+        st = np.sin(theta)
+        
+        if stable_axis_idx == 2:  # rotating around z-axis
+            R_search = np.array([[ct, -st, 0],
+                                [st,  ct, 0],
+                                [0,   0,  1]])
+        else:  # rotating around x-axis
+            R_search = np.array([[1, 0,   0],
+                                [0, ct, -st],
+                                [0, st,  ct]])
+        
+        pts_candidate = (R_search @ pts_r.T).T
         mins = pts_candidate.min(axis=0)
         maxs = pts_candidate.max(axis=0)
         extents = maxs - mins
         vol = extents[0] * extents[1] * extents[2]
+        
         if vol < best_vol:
             best_vol = vol
             best_theta = theta
-            best_rot = Rx
+            best_rot = R_search
 
-    # Compose total rotation: first R1, then rotation about x (in rotated frame)
-    R_total = best_rot @ R1
+    # Compose total rotation: first R1, then rotation around stable axis
+    R_total = R1
     aligned = (R_total @ pts_c.T).T
 
-    # Translate so bounding box is centered at original center (optional)
-    # aligned_centered = aligned + center
+    min_bounds = np.min(aligned, axis=0)
+    max_bounds = np.max(aligned, axis=0)
+    x_length, y_length, z_length = max_bounds - min_bounds
 
-    return aligned, R_total, center
+    rotation = R.from_matrix(R_total)
+
+
+    # Visualization of PCA result
+    # pc = pv.PolyData(points)
+    # big_arrow = pv.Arrow(start=center, direction=R1[:, 0], scale=x_length/2)
+    # med_arrow = pv.Arrow(start=center, direction=R1[:, 1], scale=y_length/2)
+    # small_arrow = pv.Arrow(start=center, direction=R1[:, 2], scale=z_length/2)
+    # second_big_arrow = pv.Arrow(start=center, direction=R_total[:, 0], scale=x_length/2)
+    # second_med_arrow = pv.Arrow(start=center, direction=R_total[:, 1], scale=y_length/2)
+    # second_small_arrow = pv.Arrow(start=center, direction=R_total[:, 2], scale=z_length/2)
+
+    # visualize([pc, big_arrow, med_arrow, small_arrow, second_big_arrow, second_med_arrow, second_small_arrow], colors=['black', 'red', 'blue', 'green', 'orange', 'purple', 'cyan'], off_screen=False)
+
+    return center, rotation, (x_length, y_length, z_length)
 
 
 
@@ -468,7 +493,7 @@ if __name__ == "__main__":
         original_point_cloud = pv.PolyData(np.vstack([mesh.points[::10] for mesh in original_meshes]))
 
 
-        off_screen = True
+        off_screen = False
         visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
         visualize([original_point_cloud] + length_meshes, colors=['red'] + ['tan']*len(length_meshes), filename=f"designs/length_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
         visualize([original_point_cloud] + our_meshes, colors=['red'] + ['tan']*len(our_meshes), filename=f"designs/our_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
