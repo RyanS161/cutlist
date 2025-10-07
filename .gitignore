@@ -6,3 +6,7 @@ BrickGPT/
 ShapeNetCore/
 StableText2Brick/
 .DS_Store
+pointnet/
+PartNet-archive/
+uv.lock
+scratch/

@@ -1,413 +1,475 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial import ckdtree
+from design import Design, visualize, AssembledComponent, Box, Cylinder
+from shapeNetHelper import get_shapenet_samples, get_and_transform_partnet_meshes
 import pyvista as pv
-from itertools import combinations
-import os
-import pandas as pd
-import binvox_rw
-
-
-POSSIBLE_COLORS = ["lightblue", "lightgreen", "lightcoral", "lightyellow", "lightpink", "lightgray", "lightcyan", "wheat", "lavender", "mistyrose",]
-
-def visualize(meshes, colors=None, bounds=None, axis_length=0, camera_position="iso", filename="visualization", off_screen=True):
-    plotter = pv.Plotter(off_screen=off_screen)
-    if colors is None:
-        colors = ["tan"] * len(meshes)
-    for mesh, color in zip(meshes, colors):
-        plotter.add_mesh(mesh, color=color)
-
-    # Add bounding box
-    if bounds is not None:
-        bounds = bounds.flatten()
-        bounding_box = pv.Box(bounds)
-        plotter.add_mesh(bounding_box, color="red", style="wireframe", line_width=2)
-    if axis_length > 0:
-        x_axis = pv.Arrow(start=(0, 0, 0), direction=(10, 0, 0), scale=axis_length)
-        y_axis = pv.Arrow(start=(0, 0, 0), direction=(0, 10, 0), scale=axis_length)
-        z_axis = pv.Arrow(start=(0, 0, 0), direction=(0, 0, 10), scale=axis_length)
-        plotter.add_mesh(x_axis, color="red")
-        plotter.add_mesh(y_axis, color="green")
-        plotter.add_mesh(z_axis, color="blue")
-
-    plotter.set_background("white")
-    plotter.camera_position = camera_position
-    # Create parent directory if it doesn't exist
-    if off_screen:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        plotter.screenshot(filename=filename)
-        
-        # image = plotter.screenshot(return_img=True)
-    else:
-        plotter.show()
-
-
-class Part:
-    def __init__(self, function, **kwargs):
-        self.function = function
-        self.kwargs = kwargs
-
-    def create(self):
-        return self.function(**self.kwargs)
-
-
-class DesignParameters:
-    PART_LIBRARY = {
-        # Cubes / rectangular blocks
-        0: Part(pv.Cube, x_length=20, y_length=20, z_length=120),  # Medium post
-        1: Part(pv.Cube, x_length=20, y_length=20, z_length=160),  # Tall post
-        2: Part(pv.Cube, x_length=20, y_length=40, z_length=120),  # Medium plank
-        3: Part(pv.Cube, x_length=20, y_length=40, z_length=160),  # Tall plank
-        4: Part(pv.Cube, x_length=80, y_length=40, z_length=5),  # Small square plate
-        5: Part(pv.Cube, x_length=160, y_length=40, z_length=5),  # Small rectangle plate
-        6: Part(pv.Cube, x_length=160, y_length=80, z_length=5),  # Large rectangle plate
-        # Cylinders (good for dowels, rods, posts)
-        7: Part(pv.Cylinder, radius=10, height=80, direction=(0, 0, 1)),  # Dowel
-        8: Part(pv.Cylinder, radius=80, height=10, direction=(0, 0, 1)),  # Thick disk
-    }
-
-    assembledComponents: list
-
-    def __init__(self, assembledComponents, bounds):
-        self.assembledComponents = assembledComponents
-        self.bounds = bounds
-
-    def to_vector(self):
-        list_of_vectors = [
-            component.to_vector() for component in self.assembledComponents
-        ]
-        return np.concatenate(list_of_vectors)
-
-    def to_txt(self, filename):
-        with open(filename, "w") as f:
-            for component in self.assembledComponents:
-                euler_angles = component.rotation.as_euler("xyz")
-                euler_strs = [str(angle) for angle in euler_angles]
-                f.write(
-                    f"{component.part_id} {component.translation[0]} {component.translation[1]} {component.translation[2]} {' '.join(euler_strs)}\n"
-                )
-
-    def from_txt(self, txt, from_file=True):
-        if from_file:
-            filename = txt
-            txt = ""
-            with open(filename, "r") as f:
-                txt = f.read()
-
-        txt_lines = txt.strip().split("\n")
-        assembledComponents = []
-        for line in txt_lines:
-            parts = line.strip().split()
-            part_id = int(parts[0])
-            translation = np.array([float(parts[1]), float(parts[2]), float(parts[3])])
-            rotation = R.from_euler("xyz", [float(x) for x in parts[4:]])
-            assembledComponents.append(
-                AssembledComponent(part_id, translation, rotation)
-            )
-        self.assembledComponents = assembledComponents
-
-    # def from_vector(self, vector):
-    #     assembledComponents = []
-    #     offset = 0
-    #     for part in self.assembledComponents:
-    #         part_size = len(part.to_vector())
-    #         part_vector = vector[offset:offset + part_size]
-    #         new_part = AssembledComponent(part.name, RigidTransform())
-    #         new_part.from_vector(part_vector)
-    #         assembledComponents.append(new_part)
-    #         offset += part_size
-    #     self.assembledComponents = assembledComponents
-
-    def visualize_design(self, filename="design"):
-        meshes = [component.mesh for component in self.assembledComponents]
-        visualize(meshes, bounds=self.bounds, filename=filename + ".png")
-
-    @staticmethod
-    def visualize_part_library(filename="designs/part_library", spacing=200):
-        # Calculate grid dimensions for layout
-        num_parts = len(DesignParameters.PART_LIBRARY)
-        cols = int(np.ceil(np.sqrt(num_parts)))
-        meshes, colors = [], []
-
-        for i, (part_id, part) in enumerate(DesignParameters.PART_LIBRARY.items()):
-            # Calculate grid position
-            row = i // cols
-            col = i % cols
-            part_mesh = part.create()
-
-            # Position in grid
-            x_offset = (col + 1) * spacing
-            y_offset = (row + 1) * spacing
-
-            # Translate the mesh to its grid position
-            translated_mesh = part_mesh.translate([x_offset, y_offset, 0])
-
-            colors.append(POSSIBLE_COLORS[part_id % len(POSSIBLE_COLORS)])
-            meshes.append(translated_mesh)
-
-
-        visualize(meshes, colors=colors, axis_length=100, filename=filename)
-
-    def verify(self):
-        # FIRST CHECK: MAKE SURE ALL PARTS ARE WITHIN BOUNDS
-        # Make a bounding box from the bounds
-        bounds_min = self.bounds[:, 0]
-        bounds_max = self.bounds[:, 1]
-        for component in self.assembledComponents:
-            c_bound = component.mesh.bounds
-            component_min_bounds = [c_bound.x_min, c_bound.y_min, c_bound.z_min]
-            component_max_bounds = [c_bound.x_max, c_bound.y_max, c_bound.z_max]
-            if np.any(component_min_bounds < bounds_min) or np.any(
-                component_max_bounds > bounds_max
-            ):
-                # print(f"Component {component.part_id} is out of bounds. Verification Failed.")
-                return False
-        return True
-
-
-class AssembledComponent:
-    def __init__(self, part_id: int, translation: np.ndarray, rotation: R):
-        self.part_id = part_id
-        self.translation = translation
-        self.rotation = rotation
-
-        part = DesignParameters.PART_LIBRARY[self.part_id]
-        part_mesh = part.create()
-        part_mesh_copy = part_mesh.copy().triangulate()
-
-        # Convert rotation to 4x4 transformation matrix
-        transform_matrix = np.eye(4)
-        transform_matrix[:3, :3] = self.rotation.as_matrix()
-        transform_matrix[:3, 3] = self.translation
-
-        self.mesh = part_mesh_copy.transform(transform_matrix)
-
-    def to_vector(self):
-        return np.array(self.translation + self.rotation.as_euler())
-
-    def from_vector(self, vector):
-        self.translation = vector[:3]
-        self.rotation = R.from_euler(vector[3:])
-
-    @staticmethod
-    def random_component(max_id, bounds: np.ndarray):
-        if bounds.shape != (3, 2):
-            raise ValueError("bounds must be a 3x2 ndarray")
-        translation = np.array([np.random.uniform(low, high) for low, high in bounds])
-        # Generate random Euler angles, each snapped to pi/6 increments
-        rotation_increments = np.pi / 6
-        random_angles = (
-            np.random.randint(0, 12, size=3) * rotation_increments
-        )  # 12 increments in 2*pi
-        rotation = R.from_euler("xyz", random_angles)
-        part_id = np.random.randint(0, max_id)
-        return AssembledComponent(part_id, translation, rotation)
-
-    @staticmethod
-    def random_component_on_floor(max_id, bounds: np.ndarray):
-        # Create a new component with a random x, y position on the floor
-        translation = np.array(
-            [
-                np.random.uniform(bounds[0, 0], bounds[0, 1]),  # x
-                np.random.uniform(bounds[1, 0], bounds[1, 1]),  # y
-                bounds[2, 0],  # z (on the floor)
-            ]
-        )
-        rotation = R.from_euler("xyz", [0, 0, 0])  # No rotation
-
-        part_id = np.random.randint(0, max_id)
-        return AssembledComponent(part_id, translation, rotation)
-
-    @staticmethod
-    def random_component_on_surface(existing_component, max_id, offset_distance=0.1):
-        """Place a new component on the surface of an existing one by selecting a random face"""
-        mesh = existing_component.mesh
-
-        # Get all faces (cells) of the mesh
-        num_faces = mesh.n_cells
-
-        # Choose a random face
-        face_idx = np.random.randint(num_faces)
-
-        # Get the face as a separate mesh
-        face_mesh = mesh.extract_cells([face_idx])
-        face_normal = mesh.cell_normals[face_idx]  # Get the normal of the face
-
-        # Get the face center point and normal
-        face_center = face_mesh.center
-
-        # Alternative: Sample a random point on the face instead of using center
-        # You can also generate a random barycentric coordinate for triangular faces
-        face_points = face_mesh.points
-        if len(face_points) == 3:  # Triangle face
-            # Random barycentric coordinates
-            r1, r2 = np.random.rand(2)
-            if r1 + r2 > 1:
-                r1, r2 = 1 - r1, 1 - r2
-            r3 = 1 - r1 - r2
-            placement_point = (
-                r1 * face_points[0] + r2 * face_points[1] + r3 * face_points[2]
-            )
-        elif len(face_points) == 4:  # Quad face (like cube faces)
-            # Random point on quad using bilinear interpolation
-            u, v = np.random.rand(2)
-            placement_point = (
-                (1 - u) * (1 - v) * face_points[0]
-                + u * (1 - v) * face_points[1]
-                + u * v * face_points[2]
-                + (1 - u) * v * face_points[3]
-            )
-        else:
-            # Fallback to face center for other face types
-            placement_point = face_center
-
-        # Create the new part to get its dimensions
-        part_id = np.random.randint(0, max_id)
-        new_part = DesignParameters.PART_LIBRARY[part_id].create()
-        bounds = new_part.bounds
-
-        # Calculate offset based on the new part's size
-        part_size = max(
-            bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]
-        )
-        offset = face_normal * (part_size / 2 + offset_distance)
-
-        translation = placement_point + offset
-
-        # Align the new part with the surface normal
-        try:
-            rotation = R.align_vectors([face_normal], [[0, 0, 1]])[0]
-        except:
-            # If alignment fails, use identity rotation
-            rotation = R.from_euler("xyz", [0, 0, 0])
-
-        return AssembledComponent(part_id, translation, rotation)
-
-
-def create_random_designs():
-    NUM_COMPONENTS = 4
-    NUM_DESIGNS = 100
-    STRATEGY = "surface"  #  "surface", "random"
-    MAX_ID = len(DesignParameters.PART_LIBRARY)
-    bounds = np.array([[-200, 200], [-200, 200], [0, 200]])
-    for i in range(NUM_DESIGNS):
-        if STRATEGY == "surface":
-            # Create a design with components placed on the surface of existing components
-            components = []
-            for j in range(NUM_COMPONENTS):
-                if j == 0:
-                    # First component is randomly placed on the floor
-                    component = AssembledComponent.random_component_on_floor(
-                        MAX_ID, bounds=bounds
-                    )
-                else:
-                    # Subsequent components are placed on the surface of the previous one
-                    component = AssembledComponent.random_component_on_surface(
-                        components[j - 1], MAX_ID
-                    )
-                components.append(component)
-        else:
-            # Create a design with random components
-            components = [
-                AssembledComponent.random_component(max_id=MAX_ID, bounds=bounds)
-                for _ in range(NUM_COMPONENTS)
-            ]
-        design = DesignParameters(assembledComponents=components, bounds=bounds)
-        if design.verify():
-            print(f"Design {i} is valid and will be visualized.")
-            design.visualize_design(filename=f"designs/valid_design_{i}")
-            # design.to_txt(f"designs/valid_design_{i}.txt")
-        else:
-            print(f"Design {i} is invalid and will not be visualized.")
-            design.visualize_design(filename=f"designs/invalid_design_{i}")
-            # design.to_txt(f"designs/invalid_design_{i}.txt")
-
-
-EXAMPLE_DESIGNS = {
-    "X": "3 0 0 0 0 0 -45\n3 0 0 0 0 0 45",
-    "T": "5 0 0 0 0 0 0\n5 0 0 0 0 0 90",
-    "H": "0 -40 0 0 0 0 0\n0  40 0 0 0 0 0\n2   0 0 0 0 0 90",
-    "Chair": "0 0 0 0 0 0 0\n0 60 0 0 0 0 0\n0 0 60 0 0 0 0\n0 60 60 0 0 0 0\n4 30 20 30 0 0 0\n3 30 20 120 0 0 0\n",
-    "House": "0 0 0 60 0 0 0\n0 160 0 60 0 0 0\n0 0 80 60 0 0 0\n0 160 80 60 0 0 0\n6 80 40 5 0 0 0\n6 80 40 125 0 0 0\n5 80 0 65 90 0 0\n5 80 80 65 90 0 0\n4 40 40 65 90 90 0\n4 120 40 65 90 90 0\n8 80 0 65 0 0 0\n",
-    "Box": "0 10 10 5 0 0 0\n0 150 10 5 0 0 0\n0 10 70 5 0 0 0\n0 150 70 5 0 0 0\n5 80 10 2.5 0 0 0\n5 80 70 2.5 0 0 0\n2 10 40 60 0 0 0\n2 150 40 60 0 0 0\n6 80 40 117.5 90 0 0\n6 80 40 2.5 90 0 0\n",
-}
+from tqdm import tqdm
+import os, copy
 
 
 def visualize_txt_designs(designs):
+    EXAMPLE_DESIGNS = {
+        "X": "3 0 0 0 0 0 -45\n3 0 0 0 0 0 45",
+        "T": "5 0 0 0 0 0 0\n5 0 0 0 0 0 90",
+        "H": "0 -40 0 0 0 0 0\n0  40 0 0 0 0 0\n2   0 0 0 0 0 90",
+        "Chair": "0 0 0 0 0 0 0\n0 60 0 0 0 0 0\n0 0 60 0 0 0 0\n0 60 60 0 0 0 0\n4 30 20 30 0 0 0\n3 30 20 120 0 0 0\n",
+        "House": "0 0 0 60 0 0 0\n0 160 0 60 0 0 0\n0 0 80 60 0 0 0\n0 160 80 60 0 0 0\n6 80 40 5 0 0 0\n6 80 40 125 0 0 0\n5 80 0 65 90 0 0\n5 80 80 65 90 0 0\n4 40 40 65 90 90 0\n4 120 40 65 90 90 0\n8 80 0 65 0 0 0\n",
+        "Box": "0 10 10 5 0 0 0\n0 150 10 5 0 0 0\n0 10 70 5 0 0 0\n0 150 70 5 0 0 0\n5 80 10 2.5 0 0 0\n5 80 70 2.5 0 0 0\n2 10 40 60 0 0 0\n2 150 40 60 0 0 0\n6 80 40 117.5 90 0 0\n6 80 40 2.5 90 0 0\n",
+    }
     for letter, design_txt in designs.items():
-        design = DesignParameters(
+        design = Design(
             assembledComponents=[],
             bounds=np.array([[-200, 200], [-200, 200], [0, 200]]),
         )
         design.from_txt(design_txt, from_file=False)
-        design.visualize_design(filename=f"designs/GPTdesign_{letter}")
+        design.visualize_design(filename=f"designs/design_{letter}")
 
 
-def visualize_shapenet_obj(filename, output_image="designs/sample_obj.png"):
-    """Visualize a 3D model from an OBJ file"""
-    json_file = filename.replace(".obj", ".json")
 
 
-    # read json file to get bounds
-    # if os.path.isfile(json_file):
-    #     with open(json_file, "r") as f:
-    #         metadata = json.load(f)
-
-    def transform_mesh(mesh, target_size=100):
-        # Rotate mesh to stand upright
-        mesh = mesh.rotate_x(90)
-        # Center mesh at origin
-        mesh_width = mesh.bounds[1] - mesh.bounds[0]
-        mesh_depth = mesh.bounds[3] - mesh.bounds[2]
-        # scale to be 100 millimeters wide on the smallest side
-        scale = target_size / max(mesh_width, mesh_depth)
-        mesh = mesh.scale([scale, scale, scale])
-        z_height = mesh.bounds[5] - mesh.bounds[4]
-        translation = np.array((0, 0, z_height / 2)) - np.array(mesh.center)
-        mesh = mesh.translate(translation)
-        return mesh
-
-    # Read the mesh and orient properly
-    mesh = transform_mesh(pv.read(filename))
-
-    with open(filename.replace(".obj", ".surface.binvox"), "rb") as f:
-        voxelized_model = binvox_rw.read_as_3d_array(f)
-        voxel_data = voxelized_model.data
-        # make point cloud from voxel data
-        points = np.argwhere(voxel_data)
-        point_cloud = pv.PolyData(points[::10])
-        point_cloud = transform_mesh(point_cloud)
+import numpy as np
 
 
-    visualize([mesh, point_cloud], colors=['tan', 'red'], filename=output_image)#, bounds=np.array([[-200,200], [-200,200], [0,200]]))
+def score_points_to_cylinder(points, cylinder_axis, cylinder_radius, cylinder_height):
+
+    distance_from_axis = np.linalg.norm(points - (points @ cylinder_axis[:, None]) * cylinder_axis[:, None].T, axis=1)
+
+    half_height = cylinder_height / 2
+    projections = np.abs(points @ cylinder_axis)
+
+    inside_of_cylinder = (distance_from_axis <= cylinder_radius) & (projections <= half_height)
+
+    above_cap = (distance_from_axis <= cylinder_radius) & (projections > half_height)
+
+    # set distances for points inside the cylinder to the minimum of distance to side or cap
+    inside_distances = np.minimum(cylinder_radius - distance_from_axis, half_height - projections)
+    above_cap_distances = np.abs(projections - half_height)
+    outside_distances = np.sqrt((distance_from_axis - cylinder_radius) ** 2 + np.maximum(0, projections - half_height) ** 2)
+
+    distances = np.zeros(points.shape[0])
+    distances[inside_of_cylinder] = inside_distances[inside_of_cylinder]
+    distances[above_cap] = above_cap_distances[above_cap]
+    distances[~(inside_of_cylinder | above_cap)] = outside_distances[~(inside_of_cylinder | above_cap)]
+
+    return np.linalg.norm(distances)
+
+
+def score_points_to_box(points, box_x, box_y, box_z):
+
+    # Idea one - minimum distance to box surface
+    # Problem: boxes can be arbitrarily long
+    # half_extents = np.array([box_x/2, box_y/2, box_z/2])
+    # d = np.abs(points) - half_extents
+    # outside = np.linalg.norm(np.maximum(d, 0), axis=1)
+    # inside = np.minimum(np.max(d, axis=1), 0)
+    # return np.linalg.norm(outside + np.abs(inside))
+    
+    # Idea two - distance to vertices
+    # Penalizes larger shapes because they have vertices further away
+    box_vertices = np.array([
+        [box_x / 2, box_y / 2, box_z / 2],
+        [box_x / 2, box_y / 2, -box_z / 2],
+        [box_x / 2, -box_y / 2, box_z / 2],
+        [box_x / 2, -box_y / 2, -box_z / 2],
+        [-box_x / 2, box_y / 2, box_z / 2],
+        [-box_x / 2, box_y / 2, -box_z / 2],
+        [-box_x / 2, -box_y / 2, box_z / 2],
+        [-box_x / 2, -box_y / 2, -box_z / 2],
+    ])
+
+    # calculate the distance from each point to each vertex
+    distances = np.linalg.norm(points[:, None, :] - box_vertices[None, :, :], axis=2)
+    return np.mean(distances.flatten())
+
+    # Idea three - compare the dimensions with the ideal dimensions of a fitted primitive
+
+
+def ransac_for_pointcloud(sample):
+    N_SAMPLED_POINTS = 100
+    K_ITERATIONS = 250
+    SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+    original_pc = sample["point_cloud"]
+    
+    # visualize(scaled_pcs, colors=['red', 'green', 'blue', 'purple'], filename=f"designs/pointcloud_scaled_{sample['category']}_{sample['object_id']}.png")
+
+
+    best_pc, best_part, best_avg_distance = None, None, np.inf
+    for scale in tqdm(SCALES, desc=f"Scaling for {sample['category']} {sample['object_id']}"):
+        target_pc = original_pc.scale(scale, point=(0, 0, 0))
+        points = target_pc.points
+        for _ in range(K_ITERATIONS):
+            # Pick N random points
+            sampled_indices = np.random.choice(
+                points.shape[0], N_SAMPLED_POINTS, replace=False
+            )
+            shape_id = np.random.randint(0, len(Design.PART_LIBRARY))
+            shape = Design.PART_LIBRARY[shape_id]
+            sampled_points = points[sampled_indices]
+
+            centroid, rotation = pca_from_points(sampled_points)
+
+            # Create design part aligned with principal components
+            part = AssembledComponent(
+                part_id=shape_id,
+                translation=centroid,
+                rotation=rotation,
+            )
+
+            axis_aligned_pc = points_centered @ np.linalg.inv(eigenvectors)
+
+            if type(shape) is Box:
+                box_x, box_y, box_z = shape.x_length, shape.y_length, shape.z_length
+                avg_distance = np.mean(distance_points_to_box(axis_aligned_pc, box_x, box_y, box_z))
+            elif type(shape) is Cylinder:
+                cylinder_axis = shape.axis
+                cylinder_radius = shape.radius
+                cylinder_height = shape.height
+                avg_distance = np.average(distance_points_to_cylinder(axis_aligned_pc, cylinder_axis, cylinder_radius, cylinder_height))
+                # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
+            else:
+                print("Unknown shape type")
+
+            # Calculate distances from points to mesh surface
+            # mesh_points = part.mesh.triangulate().points
+            # kdtree = ckdtree.cKDTree(mesh_points)
+            # distances, _ = kdtree.query(points)
+
+            # avg_distance = np.mean(distances)
+            if avg_distance < best_avg_distance:
+                best_avg_distance = avg_distance
+                best_part = part
+                best_pc = target_pc
+                # visualize(
+                #     [best_pc, best_part.mesh],
+                #     colors=["red", "tan"],
+                #     filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
+                # )
+                # time.sleep(0.5)
+
+    if best_part is not None:
+        # Visualize the best part
+        visualize(
+            [best_pc, best_part.mesh],
+            colors=["red", "tan"],
+            filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
+        )
+    else:
+        print("No part found")
+
+
+def arbitrary_primitives_strategy(sample):
+    meshes = sample['meshes']
+    fitted_meshes = []
+    for mesh in meshes:
+        # Fit a primitive shape to the mesh
+        centroid, rotation, bounds = pca_from_points(mesh.points)
+
+        # bounding_box = mesh.bounds
+        # dims = [bounding_box[1] - bounding_box[0], bounding_box[3] - bounding_box[2], bounding_box[5] - bounding_box[4]]
+        # dims.sort(reverse=True)
+
+        options = [
+            Box(x_length=bounds[0], y_length=bounds[1], z_length=bounds[2]),
+        ]
+        
+        # if bounds[1] != 0 and 0.83 <= bounds[0]/bounds[1] <= 1.2:
+        #     options.append(Cylinder(radius=bounds[0]/2, height=bounds[2], direction=(0,0,1)))
+        # elif bounds[2] != 0 and 0.83 <= bounds[1]/bounds[2] <= 1.2:
+        #     options.append(Cylinder(radius=bounds[1]/2, height=bounds[0], direction=(1,0,0)))
+        # elif bounds[0] != 0 and 0.83 <= bounds[2]/bounds[0] <= 1:
+        #     options.append(Cylinder(radius=bounds[0]/2, height=bounds[1], direction=(0,1,0)))
+
+        option_scores = [score_mesh_fit(option, mesh.points, rotation) for option in options]
+        best_option = options[np.argmin(option_scores)]
+        fitted_part = AssembledComponent(part_id=-1, translation=centroid, rotation=rotation, custom_component=best_option)
+        #### do comparison to see the best mesh
+        fitted_meshes.append(fitted_part.mesh)
+    return fitted_meshes
+
+
+def arbitrary_length_strategy(sample):
+    meshes = sample['meshes']
+
+    # scales = np.linspace(0.1, 3.0, 30)
+    scales = [1.0,]
+    best_scale_score = np.inf
+    best_scale_meshes = None
+    best_scale = None
+    for scale in scales:
+        scale_score = 0
+        scaled_meshes = [mesh.scale(scale) for mesh in meshes]
+        scale_meshes = []
+        for mesh in scaled_meshes:
+            centroid, rotation, bounds = pca_from_points(mesh.points)
+            best_part, best_avg_distance = None, np.inf
+            for shape_id, shape in Design.PART_LIBRARY.items():
+                base_shape = Design.PART_LIBRARY[shape_id]
+                modified_shape = copy.deepcopy(base_shape)
+                modified_shape.z_length = bounds[0]
+
+                avg_distance = score_mesh_fit(modified_shape, mesh.points, rotation)
+                # print(f"Shape ID: {shape_id}, Avg Distance: {avg_distance}")
+                if avg_distance < best_avg_distance:
+                    best_avg_distance = avg_distance
+                    best_part = AssembledComponent(part_id=-1,
+                                                    translation=centroid,
+                                                    rotation=rotation,
+                                                    custom_component=modified_shape)
+            scale_score += best_avg_distance
+            scale_meshes.append(best_part.mesh)
+        if scale_score < best_scale_score:
+            best_scale_score = scale_score
+            best_scale_meshes = scale_meshes
+            best_scale = scale
+
+    print(f"Best scale: {best_scale}")
+
+    return best_scale_meshes, best_scale
+
+def our_primitives_strategy(sample):
+    meshes = sample['meshes']
+
+    # scales = np.linspace(0.1, 3.0, 30)
+    scales = [1.0,]
+    best_scale_score = np.inf
+    best_scale_meshes = None
+    best_scale = None
+    for scale in scales:
+        scale_score = 0
+        scaled_meshes = [mesh.scale(scale) for mesh in meshes]
+        scale_meshes = []
+        for mesh in scaled_meshes:
+            centroid, rotation, bounds = pca_from_points(mesh.points)
+            best_part, best_avg_distance = None, np.inf
+            for shape_id, shape in Design.PART_LIBRARY.items():
+                avg_distance = score_mesh_fit(shape, mesh.points, rotation)
+                # print(f"Shape ID: {shape_id}, Avg Distance: {avg_distance}")
+                if avg_distance < best_avg_distance:
+                    best_avg_distance = avg_distance
+                    best_part = AssembledComponent(
+                        part_id=shape_id,
+                        translation=centroid,
+                        rotation=rotation,
+                    )
+            scale_score += best_avg_distance
+            scale_meshes.append(best_part.mesh)
+        if scale_score < best_scale_score:
+            best_scale_score = scale_score
+            best_scale_meshes = scale_meshes
+            best_scale = scale
+
+    print(f"Best scale: {best_scale}")
+
+    return best_scale_meshes, best_scale
+
+
+
+
+def score_mesh_fit(centered_mesh, points, rotation):
+    point_centroid = np.mean(points, axis=0)
+    centered_points = points - point_centroid
+    aligned_points = centered_points @ rotation.as_matrix()
+
+    if type(centered_mesh) is Box:
+        box_x, box_y, box_z = centered_mesh.x_length, centered_mesh.y_length, centered_mesh.z_length
+        score = score_points_to_box(aligned_points, box_x, box_y, box_z)
+    elif type(centered_mesh) is Cylinder:
+        cylinder_direction = centered_mesh.direction
+        cylinder_radius = centered_mesh.radius
+        cylinder_height = centered_mesh.height
+        score = score_points_to_cylinder(aligned_points, cylinder_direction, cylinder_radius, cylinder_height)
+        # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
+    else:
+        print(f"Unknown shape type: {type(centered_mesh)}")
+
+    return score
+
+def pca_from_points(points):
+    centroid = np.mean(points, axis=0)
+    points_centered = points - centroid
+    covariance = points_centered.T @ points_centered
+    # EIGENDECOMPOSITION
+    eigenvalues, eigenvectors = np.linalg.eig(covariance)
+    # Sort eigenvectors by eigenvalues in descending order
+    sorted_indices = np.argsort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[sorted_indices]
+    normalized_eigenvalues = eigenvalues / np.sum(eigenvalues)
+    # check if two eigenvalues are very close together
+    rolled_eigenvalues = np.roll(normalized_eigenvalues, 1)
+    close_indices = np.where(np.isclose(normalized_eigenvalues, rolled_eigenvalues, atol=1e-3))[0]
+    former_eigenvectors = eigenvectors.copy()
+    for idx in close_indices:
+        idx = (idx + 1) % 3
+        print(f"Close eigenvalues: {normalized_eigenvalues} at index {idx}")
+        # rotate the two eigenvectors by 45 degrees
+        c, s = np.cos(np.pi/4), np.sin(np.pi/4)
+        R_45 = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+        eigenvectors[:, idx] = R_45 @ eigenvectors[:, idx]
+        eigenvectors[:, (idx + 1) % 3] = R_45 @ eigenvectors[:, (idx + 1) % 3]
+
+    # Correct for non-positive determinant (reflection)
+    if np.linalg.det(eigenvectors) < 0:
+        eigenvectors[:, 2] *= -1
+
+    rotation = R.from_matrix(eigenvectors)
+
+    # get bounding box of normalized points:
+    points_normalized = points_centered @ eigenvectors
+    min_bounds = np.min(points_normalized, axis=0)
+    max_bounds = np.max(points_normalized, axis=0)
+    x_length, y_length, z_length = max_bounds - min_bounds
+    
+    # Visualization of PCA result
+    pc = pv.PolyData(points)
+    big_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 0], scale=50)
+    med_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 1], scale=30)
+    small_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 2], scale=10)
+    p_big_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 0], scale=50)
+    p_med_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 1], scale=30)
+    p_small_arrow = pv.Arrow(start=centroid, direction=former_eigenvectors[:, 2], scale=10)
+
+    visualize([pc, p_big_arrow, p_med_arrow, p_small_arrow, big_arrow, med_arrow, small_arrow], colors=['black', 'red', 'blue', 'green', 'yellow', 'yellow', 'yellow'], off_screen=False)
+
+
+    return centroid, rotation, (x_length, y_length, z_length)
+
+
+def pca_align_with_search(points, n_steps=360):
+    """
+    Align a cuboid-like point cloud to axes robustly when two eigenvalues are similar.
+    Strategy:
+      1. center points
+      2. PCA -> use first eigenvector as main axis (stable)
+      3. rotate points to make first axis equal to global x-axis
+      4. search angles theta in [0, 180) rotating around x axis to find theta that
+         minimizes axis-aligned bounding box volume
+      5. return aligned points and the full rotation matrix to get back to original frame
+
+    points: (N,3) numpy array
+    n_steps: number of angle samples to try (increase for more precision)
+    """
+    pts = np.asarray(points).astype(float)
+    center = pts.mean(axis=0)
+    pts_c = pts - center
+
+    # PCA (covariance)
+    cov = np.cov(pts_c.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)  # ascending eigenvalues
+    # sort descending
+    idx = np.argsort(eigvals)[::-1]
+    eigvecs = eigvecs[:, idx]
+    eigvals = eigvals[idx]
+
+    # Choose principal axis = eigvecs[:,0]
+    main_axis = eigvecs[:, 0]
+
+    # Build rotation R1 that maps main_axis -> x-axis [1,0,0]
+    # Use rotation that maps unit vector a -> b: axis = cross(a,b), angle = acos(dot(a,b))
+    a = main_axis / np.linalg.norm(main_axis)
+    b = np.array([1.0, 0.0, 0.0])
+    v = np.cross(a, b)
+    s = np.linalg.norm(v)
+    c = np.dot(a, b)
+    if s < 1e-8:
+        # already aligned or anti-parallel
+        if c > 0:
+            R1 = np.eye(3)
+        else:
+            # 180 deg: rotate about any axis orthogonal to a, e.g., y-axis
+            R1 = np.array([[-1,0,0],[0,-1,0],[0,0,1]])
+    else:
+        vx = np.array([[0, -v[2], v[1]],
+                       [v[2], 0, -v[0]],
+                       [-v[1], v[0], 0]])
+        R1 = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
+
+    # rotate points so main axis aligns with x
+    pts_r = (R1 @ pts_c.T).T
+
+    # We now have ambiguity in rotation around x axis.
+    # Search theta in [0, pi) (180 deg) because 180 repeats
+    thetas = np.linspace(0, np.pi, n_steps, endpoint=False)
+    best_theta = 0.0
+    best_vol = np.inf
+    best_rot = np.eye(3)
+
+    for theta in thetas:
+        # rotation about x axis by theta
+        ct = np.cos(theta); st = np.sin(theta)
+        Rx = np.array([[1, 0, 0],
+                       [0, ct, -st],
+                       [0, st,  ct]])
+        pts_candidate = (Rx @ pts_r.T).T
+        mins = pts_candidate.min(axis=0)
+        maxs = pts_candidate.max(axis=0)
+        extents = maxs - mins
+        vol = extents[0] * extents[1] * extents[2]
+        if vol < best_vol:
+            best_vol = vol
+            best_theta = theta
+            best_rot = Rx
+
+    # Compose total rotation: first R1, then rotation about x (in rotated frame)
+    R_total = best_rot @ R1
+    aligned = (R_total @ pts_c.T).T
+
+    # Translate so bounding box is centered at original center (optional)
+    # aligned_centered = aligned + center
+
+    return aligned, R_total, center
+
+
+
 
 
 if __name__ == "__main__":
-    DesignParameters.visualize_part_library()
+
+    # points = np.array([[0,0,0],[0,0,-3],[2,0,0],[0,2,0], [0,-2,3], [-1, -1, 0], [-3,0,1], [1,1,10]])
+    # correct_distances = np.array([2, 0, 0, 0, 0, (2-np.sqrt(2)), 1, 7])
+    # print(np.allclose(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6), correct_distances))
+    # print(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6))
+    # print(np.abs(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6) - correct_distances))
+    
+    # exit()
+
+    # Design.visualize_part_library()
 
     # create_random_designs()
     # visualize_txt_designs(GPT_DESIGNS)
-    SHAPENET_PARENT_DIR = "/Users/ryanslocum/Downloads/GenWood/ShapeNetCore"
-    df = pd.read_csv(
-        os.path.join(SHAPENET_PARENT_DIR, "shapenet_models_with_captions.csv"),
-        dtype={"category_id": str},
-    )
-    # choose 5 random samples from each category
-    sample_df = df.groupby("category").apply(lambda x: x.sample(5, random_state=42)).reset_index(drop=True)
-    for index, row in sample_df.iterrows():
-        category = row["category"]
-        category_id = row["category_id"]
-        object_id = row["object_id"]
-        print(object_id)
-        obj_file = os.path.join(
-            SHAPENET_PARENT_DIR,
-            category_id,
-            str(object_id),
-            "models",
-            "model_normalized.obj",
-        )
-        if os.path.isfile(obj_file):
-            visualize_shapenet_obj(
-                obj_file, output_image=f"designs/shapenet_{category}_{object_id}.png"
-            )
-        else:
-            print(f"OBJ file not found: {obj_file}")
+
+    # samples = get_shapenet_samples()
+    # for sample in samples:
+    #     visualize(
+    #         [sample["transformed_mesh"], sample["point_cloud"]],
+    #         colors=["tan", "red"],
+    #         filename=f"designs/shapenet_{sample['category']}_{sample['object_id']}.png",
+    #     )
+    #     ransac_for_pointcloud(sample)
+
+
+    desired_models = [
+        "1299",
+        "10027",
+        # "14208",
+        "18258",
+        "18740",
+    ]
+
+
+    # Need to investigate how to integrate the part hierarchy as well
+    for num in desired_models:
+        original_meshes = get_and_transform_partnet_meshes(f"/Users/ryanslocum/Downloads/cutlist/scratch/{num}")
+
+        arbitrary_meshes = arbitrary_primitives_strategy({"meshes": original_meshes})
+        length_meshes, best_scale = arbitrary_length_strategy({"meshes": original_meshes})
+        our_meshes, best_scale = our_primitives_strategy({"meshes": original_meshes})
+        
+        original_point_cloud = pv.PolyData(np.vstack([mesh.points[::10] for mesh in original_meshes]))
+
+
+        off_screen = True
+        visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+        visualize([original_point_cloud] + length_meshes, colors=['red'] + ['tan']*len(length_meshes), filename=f"designs/length_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+        visualize([original_point_cloud] + our_meshes, colors=['red'] + ['tan']*len(our_meshes), filename=f"designs/our_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+

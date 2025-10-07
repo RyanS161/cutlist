@@ -20,7 +20,7 @@ def get_shapenet_words():
 def collect_shapenet_data():
 
     shapenet_data = []
-    shapenet_parent_dir = "/Users/ryanslocum/Downloads/GenWood/ShapeNetCore"
+    shapenet_parent_dir = "/Users/ryanslocum/Downloads/cutlist/ShapeNetCore"
     for category_id in os.listdir(shapenet_parent_dir):
         category_folder = os.path.join(shapenet_parent_dir, category_id)
         if os.path.isdir(category_folder):
@@ -40,7 +40,7 @@ def collect_shapenet_data():
     print(shapenet_df['category'].value_counts())
     shapenet_df.to_csv("shapenet_models.csv", index=False)
 
-    stabletext2brick_parent_dir = "/Users/ryanslocum/Downloads/GenWood/StableText2Brick/data"
+    stabletext2brick_parent_dir = "/Users/ryanslocum/Downloads/cutlist/StableText2Brick/data"
     stabletext2brick_df = pd.DataFrame()
     for file in os.listdir(stabletext2brick_parent_dir):
         if file.endswith(".parquet"):
@@ -60,6 +60,9 @@ def collect_shapenet_data():
     print(merged_df['captions'].notnull().sum(), merged_df['captions'].isnull().sum())
     # print the category of models that do not have captions
     print(merged_df[merged_df['captions'].isnull()]['category'].value_counts())
+
+    # print ten random rows
+    print(merged_df.sample(10))
 
 
     merged_df.to_csv(os.path.join(shapenet_parent_dir, "shapenet_models_with_captions.csv"), index=False)
