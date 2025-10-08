@@ -8,10 +8,6 @@ from tqdm import tqdm
 import os, copy
 
 
-
-global_counter_delete_later = 0
-
-
 def visualize_txt_designs(designs):
     EXAMPLE_DESIGNS = {
         "X": "3 0 0 0 0 0 -45\n3 0 0 0 0 0 45",
@@ -176,13 +172,6 @@ def arbitrary_primitives_strategy(sample):
         options = [
             Box(x_length=bounds[0], y_length=bounds[1], z_length=bounds[2]),
         ]
-        
-        # if bounds[1] != 0 and 0.83 <= bounds[0]/bounds[1] <= 1.2:
-        #     options.append(Cylinder(radius=bounds[0]/2, height=bounds[2], direction=(0,0,1)))
-        # elif bounds[2] != 0 and 0.83 <= bounds[1]/bounds[2] <= 1.2:
-        #     options.append(Cylinder(radius=bounds[1]/2, height=bounds[0], direction=(1,0,0)))
-        # elif bounds[0] != 0 and 0.83 <= bounds[2]/bounds[0] <= 1:
-        #     options.append(Cylinder(radius=bounds[0]/2, height=bounds[1], direction=(0,1,0)))
 
         option_scores = [score_mesh_fit(option, mesh.points, rotation) for option in options]
         best_option = options[np.argmin(option_scores)]
@@ -289,213 +278,86 @@ def score_mesh_fit(centered_mesh, points, rotation):
 
     return score
 
-# def pca_from_points(points):
-#     centroid = np.mean(points, axis=0)
-#     points_centered = points - centroid
-#     covariance = points_centered.T @ points_centered
-#     # EIGENDECOMPOSITION
-#     eigenvalues, eigenvectors = np.linalg.eig(covariance)
-#     # Sort eigenvectors by eigenvalues in descending order
-#     sorted_indices = np.argsort(eigenvalues)[::-1]
-#     eigenvalues = eigenvalues[sorted_indices]
-#     normalized_eigenvalues = eigenvalues / np.sum(eigenvalues)
-
-#     # Correct for non-positive determinant (reflection)
-#     if np.linalg.det(eigenvectors) < 0:
-#         eigenvectors[:, 2] *= -1
-
-#     rotation = R.from_matrix(eigenvectors)
-
-#     # get bounding box of normalized points:
-#     points_normalized = points_centered @ eigenvectors
-#     min_bounds = np.min(points_normalized, axis=0)
-#     max_bounds = np.max(points_normalized, axis=0)
-#     x_length, y_length, z_length = max_bounds - min_bounds
-    
-#     # Visualization of PCA result
-#     # pc = pv.PolyData(points)
-#     # big_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 0], scale=x_length/2)
-#     # med_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 1], scale=y_length/2)
-#     # small_arrow = pv.Arrow(start=centroid, direction=eigenvectors[:, 2], scale=z_length/2)
-
-#     # visualize([pc, big_arrow, med_arrow, small_arrow], colors=['black', 'red', 'blue', 'green'], off_screen=False)
-
-#     return centroid, rotation, (x_length, y_length, z_length)
-
-
-# def pca_align_with_search(points, n_steps=180):
-#     """
-#     Align a cuboid-like point cloud to axes robustly when two eigenvalues are similar.
-#     Strategy:
-#       1. center points
-#       2. PCA -> identify which two eigenvalues are most similar
-#       3. rotate points to align the stable axis (orthogonal to similar eigenvalues) with a coordinate axis
-#       4. search angles theta around the stable axis to minimize bounding box volume
-#       5. return aligned points and the full rotation matrix
-
-#     points: (N,3) numpy array
-#     n_steps: number of angle samples to try (increase for more precision)
-#     """
-#     pts = np.asarray(points).astype(float)
-#     center = pts.mean(axis=0)
-#     pts_c = pts - center
-
-#     # PCA (covariance)
-#     cov = np.cov(pts_c.T)
-#     eigvals, eigvecs = np.linalg.eigh(cov)  # ascending eigenvalues
-#     # sort descending
-#     idx = np.argsort(eigvals)[::-1]
-#     eigvecs = eigvecs[:, idx]
-#     eigvals = eigvals[idx]
-
-#     # Ensure right-handed coordinate system
-#     if np.linalg.det(eigvecs) < 0:
-#         eigvecs[:, -1] *= -1
-#     main_axis = eigvecs[:, 0]
-
-#     # Build rotation R1 that maps stable_axis -> target_direction
-#     a = main_axis / np.linalg.norm(main_axis)
-#     b = np.array([1.0, 0.0, 0.0])
-#     v = np.cross(a, b)
-#     s = np.linalg.norm(v)
-#     c = np.dot(a, b)
-    
-#     if s < 1e-8:
-#         R1 = np.eye(3)
-        
-#     else:
-#         vx = np.array([[0, -v[2], v[1]],
-#                        [v[2], 0, -v[0]],
-#                        [-v[1], v[0], 0]])
-#         R1 = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
-
-#     # rotate points so stable axis aligns with target direction
-#     pts_r = (R1 @ pts_c.T).T
-
-
-#     best_rot = np.eye(3)
-
-#     # Find which two eigenvalues are most similar
-#     # Compare ratios between consecutive eigenvalues
-
-#     normalized_eigvals = eigvals / np.sum(eigvals)
-#     rolled_eigvals = np.roll(normalized_eigvals, 1)
-#     diffs = np.abs(normalized_eigvals - rolled_eigvals)
-
-#     # Find smallest ratio
-#     stable_axis_idx = (np.argmin(diffs) + 1) % 3
-
-#     target_direction = np.zeros(3)
-#     target_direction[stable_axis_idx] = 1.0
-
-#     # Search rotation around the stable axis
-#     thetas = np.linspace(-np.pi/4, np.pi/4, n_steps, endpoint=False)
-#     best_vol = np.inf
-
-#     for theta in thetas:
-#         ct = np.cos(theta)
-#         st = np.sin(theta)
-        
-#         if stable_axis_idx == 2:  # rotating around z-axis
-#             R_search = np.array([[ct, -st, 0],
-#                                 [st,  ct, 0], 
-#                                 [0,   0,  1]])
-#         elif stable_axis_idx == 1:  # rotating around y-axis
-#             R_search = np.array([[ ct, 0, st],
-#                                 [ 0,  1, 0],
-#                                 [-st, 0, ct]])
-#         else:  # rotating around x-axis
-#             R_search = np.array([[1, 0,   0],
-#                                 [0, ct, -st],
-#                                 [0, st,  ct]])
-        
-#         pts_candidate = (R_search @ pts_r.T).T
-#         mins = pts_candidate.min(axis=0)
-#         maxs = pts_candidate.max(axis=0)
-#         extents = maxs - mins
-#         vol = extents[0] * extents[1] * extents[2]
-        
-#         if vol < best_vol:
-#             best_vol = vol
-#             best_rot = R_search
-
-#     # Compose total rotation: first R1, then rotation around stable axis
-#     R_total = R1 @ best_rot
-#     aligned = (R_total @ pts_c.T).T
-
-#     min_bounds = np.min(aligned, axis=0)
-#     max_bounds = np.max(aligned, axis=0)
-#     x_length, y_length, z_length = max_bounds - min_bounds
-
-#     rotation = R.from_matrix(R_total)
-
-
-#     # Visualization of PCA result
-#     # pc = pv.PolyData(points)
-#     # big_arrow = pv.Arrow(start=center, direction=R1[:, 0], scale=x_length/2)
-#     # med_arrow = pv.Arrow(start=center, direction=R1[:, 1], scale=y_length/2)
-#     # small_arrow = pv.Arrow(start=center, direction=R1[:, 2], scale=z_length/2)
-#     # second_big_arrow = pv.Arrow(start=center, direction=R_total[:, 0], scale=x_length/2)
-#     # second_med_arrow = pv.Arrow(start=center, direction=R_total[:, 1], scale=y_length/2)
-#     # second_small_arrow = pv.Arrow(start=center, direction=R_total[:, 2], scale=z_length/2)
-#     # global global_counter_delete_later
-#     # visualize([pc, big_arrow, med_arrow, small_arrow, second_big_arrow, second_med_arrow, second_small_arrow], colors=['black', 'red', 'blue', 'green', 'orange', 'purple', 'cyan'], off_screen=True, filename=f"designs/pca_debug{global_counter_delete_later:02d}.png")
-#     # print(global_counter_delete_later)
-#     # global_counter_delete_later += 1
-
-#     return center, rotation, (x_length, y_length, z_length)
-
 
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
-def fit_with_rotation(points, n_steps=180):
-    THETAS = np.linspace(-np.pi/4, np.pi/4, n_steps)
-
+def fit_with_rotation(points, coarse_steps=20, fine_steps=10):
+    MAX_ANGLE = np.pi/4
     pts = np.asarray(points).astype(float)
     center = pts.mean(axis=0)
     pts_c = pts - center
-
+    
     best_vol = np.inf
     pts_r = pts_c.copy()
     R_total = np.eye(3)
-
-    for axis in range(3):
-        rot = np.eye(3)
-        for theta in THETAS:
-            ct, st = np.cos(theta), np.sin(theta)
-            if axis == 0:  # rotating around x-axis
-                R_search = np.array([[1, 0,   0],
-                                    [0, ct, -st],
-                                    [0, st,  ct]])
-            elif axis == 1:  # rotating around y-axis
-                R_search = np.array([[ ct, 0, st],
-                                    [ 0,  1, 0],
-                                    [-st, 0, ct]])
-            else:  # rotating around z-axis
-                R_search = np.array([[ct, -st, 0],
-                                    [st,  ct, 0], 
-                                    [0,   0,  1]])
-
-            pts_candidate = (R_search @ pts_r.T).T
-            mins = pts_candidate.min(axis=0)
-            maxs = pts_candidate.max(axis=0)
-            extents = maxs - mins
-            vol = extents[0] * extents[1] * extents[2]
-
-            if vol < best_vol:
-                best_vol = vol
-                rot = R_search
-        pts_r = (rot @ pts_r.T).T
-        R_total = rot @ R_total
     
+    for axis in range(3):
+        # Stage 1: Coarse search across full range
+        coarse_thetas = np.linspace(-MAX_ANGLE, MAX_ANGLE, coarse_steps)
+        best_coarse_theta = 0
+        best_coarse_vol = np.inf
+        
+        for theta in coarse_thetas:
+            R_search = get_rotation_matrix(axis, theta)
+            pts_candidate = (R_search @ pts_r.T).T
+            
+            extents = pts_candidate.max(axis=0) - pts_candidate.min(axis=0)
+            vol = extents[0] * extents[1] * extents[2]
+            
+            if vol < best_coarse_vol:
+                best_coarse_vol = vol
+                best_coarse_theta = theta
+        
+        # Stage 2: Fine search around best coarse result
+        theta_range = (np.pi/2) / coarse_steps  # Range around best coarse angle
+        fine_start = max(-MAX_ANGLE, best_coarse_theta - theta_range)
+        fine_end = min(MAX_ANGLE, best_coarse_theta + theta_range)
+        fine_thetas = np.linspace(fine_start, fine_end, fine_steps)
+        
+        best_rot = np.eye(3)
+        best_fine_vol = best_coarse_vol
+        
+        for theta in fine_thetas:
+            R_search = get_rotation_matrix(axis, theta)
+            pts_candidate = (R_search @ pts_r.T).T
+            
+            extents = pts_candidate.max(axis=0) - pts_candidate.min(axis=0)
+            vol = extents[0] * extents[1] * extents[2]
+            
+            if vol < best_fine_vol:
+                best_fine_vol = vol
+                best_rot = R_search
+        
+        # Update for next axis iteration
+        if best_fine_vol < best_vol:
+            best_vol = best_fine_vol
+        
+        pts_r = (best_rot @ pts_r.T).T
+        R_total = best_rot @ R_total
+    
+    # Final alignment and bounds calculation
     aligned = (R_total @ pts_c.T).T
-
-    min_bounds = np.min(aligned, axis=0)
-    max_bounds = np.max(aligned, axis=0)
-    x_length, y_length, z_length = max_bounds - min_bounds
+    x_length, y_length, z_length = aligned.max(axis=0) - aligned.min(axis=0)
     rotation = R.from_matrix(R_total)
-
+    
     return center, rotation, (x_length, y_length, z_length)
+
+
+def get_rotation_matrix(axis, theta):
+    ct, st = np.cos(theta), np.sin(theta)
+    
+    if axis == 0:  # x-axis rotation
+        return np.array([[1, 0,   0],
+                        [0, ct, -st],
+                        [0, st,  ct]])
+    elif axis == 1:  # y-axis rotation
+        return np.array([[ ct, 0, st],
+                        [ 0,  1, 0],
+                        [-st, 0, ct]])
+    else:  # z-axis rotation
+        return np.array([[ct, -st, 0],
+                        [st,  ct, 0], 
+                        [0,   0,  1]])
 
 
 if __name__ == "__main__":
