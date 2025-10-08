@@ -5,6 +5,7 @@ from design import Design, visualize, AssembledComponent, Box, Cylinder
 from shapeNetHelper import get_shapenet_samples, get_and_transform_partnet_meshes
 import pyvista as pv
 from tqdm import tqdm
+from itertools import permutations
 import os, copy
 
 
@@ -67,22 +68,28 @@ def score_points_to_box(points, box_x, box_y, box_z):
     
     # Idea two - distance to vertices
     # Penalizes larger shapes because they have vertices further away
-    box_vertices = np.array([
-        [box_x / 2, box_y / 2, box_z / 2],
-        [box_x / 2, box_y / 2, -box_z / 2],
-        [box_x / 2, -box_y / 2, box_z / 2],
-        [box_x / 2, -box_y / 2, -box_z / 2],
-        [-box_x / 2, box_y / 2, box_z / 2],
-        [-box_x / 2, box_y / 2, -box_z / 2],
-        [-box_x / 2, -box_y / 2, box_z / 2],
-        [-box_x / 2, -box_y / 2, -box_z / 2],
-    ])
+    # box_vertices = np.array([
+    #     [box_x / 2, box_y / 2, box_z / 2],
+    #     [box_x / 2, box_y / 2, -box_z / 2],
+    #     [box_x / 2, -box_y / 2, box_z / 2],
+    #     [box_x / 2, -box_y / 2, -box_z / 2],
+    #     [-box_x / 2, box_y / 2, box_z / 2],
+    #     [-box_x / 2, box_y / 2, -box_z / 2],
+    #     [-box_x / 2, -box_y / 2, box_z / 2],
+    #     [-box_x / 2, -box_y / 2, -box_z / 2],
+    # ])
 
-    # calculate the distance from each point to each vertex
-    distances = np.linalg.norm(points[:, None, :] - box_vertices[None, :, :], axis=2)
-    return np.mean(distances.flatten())
+    # # calculate the distance from each point to each vertex
+    # distances = np.linalg.norm(points[:, None, :] - box_vertices[None, :, :], axis=2)
+    # distances = np.min(distances, axis=1)
+    # return np.mean(distances.flatten())
 
-    # Idea three - compare the dimensions with the ideal dimensions of a fitted primitive
+    # Idea three - compare the dimensions with the dimensions of the bounding box of the points
+
+    bounding_box = points.max(axis=0) - points.min(axis=0)
+    
+    return np.linalg.norm(bounding_box - np.array([box_x, box_y, box_z]))
+    
 
 
 # def ransac_for_pointcloud(sample):
@@ -158,20 +165,25 @@ def score_points_to_box(points, box_x, box_y, box_z):
 #         print("No part found")
 
 
-def arbitrary_primitives_strategy(sample):
+def arbitrary_primitives_strategy(sample, include_cylinders=False):
     meshes = sample['meshes']
     fitted_meshes = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
-        centroid, rotation, bounds = fit_with_rotation(mesh.points)
+        centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
 
-        # bounding_box = mesh.bounds
-        # dims = [bounding_box[1] - bounding_box[0], bounding_box[3] - bounding_box[2], bounding_box[5] - bounding_box[4]]
-        # dims.sort(reverse=True)
+        options = [Box(x_length=bounds[0], y_length=bounds[1], z_length=bounds[2]),]
 
-        options = [
-            Box(x_length=bounds[0], y_length=bounds[1], z_length=bounds[2]),
-        ]
+        if include_cylinders:
+            # Find two closest bounds to use as cylinder dimensions
+            idx1, idx2 = find_two_closest_lengths(bounds)
+            direction = np.ones(3)
+            direction[[idx1, idx2]] = 0
+            
+            cylinder_radius = (bounds[idx1] + bounds[idx2])/2
+            cylinder_height = bounds[3 - idx1 - idx2]
+
+            options.append(Cylinder(radius=cylinder_radius, height=cylinder_height, direction=direction))
 
         option_scores = [score_mesh_fit(option, mesh.points, rotation) for option in options]
         best_option = options[np.argmin(option_scores)]
@@ -182,10 +194,11 @@ def arbitrary_primitives_strategy(sample):
 
 
 def arbitrary_length_strategy(sample):
+    FOOTPRINTS = [(20, 20), (40, 20),(5,)]
     meshes = sample['meshes']
 
-    # scales = np.linspace(0.1, 3.0, 30)
-    scales = [1.0,]
+    scales = np.linspace(0.1, 3.0, 30)
+    # scales = [1.0,]
     best_scale_score = np.inf
     best_scale_meshes = None
     best_scale = None
@@ -194,8 +207,32 @@ def arbitrary_length_strategy(sample):
         scaled_meshes = [mesh.scale(scale) for mesh in meshes]
         scale_meshes = []
         for mesh in scaled_meshes:
-            centroid, rotation, bounds = fit_with_rotation(mesh.points)
+            centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
             best_part, best_avg_distance = None, np.inf
+
+            for footprint in FOOTPRINTS:
+                lengths = np.array(bounds)
+
+                indices = find_closest_lengths_fit(bounds, footprint)
+                lengths[indices] = footprint
+                # if len(footprint) == 2:
+
+                #     idx1, idx2 = find_closest_lengths_fit(bounds, footprint)
+                #     lengths[idx1], lengths[idx2] = footprint
+                # else:
+                #     idx = find_closest_lengths_fit(bounds, footprint)
+                #     lengths[idx] = footprint[0]
+
+                modified_shape = Box(x_length=lengths[0], y_length=lengths[1], z_length=lengths[2])
+                avg_distance = score_mesh_fit(modified_shape, mesh.points, rotation)
+                # print(f"Footprint: {footprint}, Avg Distance: {avg_distance}")
+                if avg_distance < best_avg_distance:
+                    best_avg_distance = avg_distance
+                    best_part = AssembledComponent(part_id=-1,
+                                                    translation=centroid,
+                                                    rotation=rotation,
+                                                    custom_component=modified_shape)
+
             for shape_id, shape in Design.PART_LIBRARY.items():
                 base_shape = Design.PART_LIBRARY[shape_id]
                 modified_shape = copy.deepcopy(base_shape)
@@ -233,7 +270,7 @@ def our_primitives_strategy(sample):
         scaled_meshes = [mesh.scale(scale) for mesh in meshes]
         scale_meshes = []
         for mesh in scaled_meshes:
-            centroid, rotation, bounds = fit_with_rotation(mesh.points)
+            centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
             best_part, best_avg_distance = None, np.inf
             for shape_id, shape in Design.PART_LIBRARY.items():
                 avg_distance = score_mesh_fit(shape, mesh.points, rotation)
@@ -279,9 +316,38 @@ def score_mesh_fit(centered_mesh, points, rotation):
     return score
 
 
+def find_two_closest_lengths(lengths_list):
+    # Find the two lengths that are closest to each other (closest to a square cross-section)
+    min_diff = np.inf
+    best_pair = (None, None)
+    for i in range(len(lengths_list)):
+        for j in range(i + 1, len(lengths_list)):
+            diff = abs(lengths_list[i] - lengths_list[j])
+            if diff < min_diff:
+                min_diff = diff
+                best_pair = (i, j)
+    return best_pair
+
+
+def find_closest_lengths_fit(lengths_list, target):
+    # Given a list of 3 lengths and 2 or 3 target lengths, return the indices of the lengths that best match the target lengths
+    assert len(lengths_list) == 3
+    lengths = np.array(lengths_list)
+    perms = np.asarray(list(permutations([0,1,2])))
+    perms = perms[:, :len(target)]
+
+    best_perm = None
+    min_diff = np.inf
+    for perm in perms:
+        diff = sum(abs(p - t) for p, t in zip(lengths[perm], target))
+        if diff < min_diff:
+            min_diff = diff
+            best_perm = perm
+    return best_perm
+
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
-def fit_with_rotation(points, coarse_steps=20, fine_steps=10):
+def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
     MAX_ANGLE = np.pi/4
     pts = np.asarray(points).astype(float)
     center = pts.mean(axis=0)
@@ -404,6 +470,6 @@ if __name__ == "__main__":
         original_point_cloud = pv.PolyData(np.vstack([mesh.points[::10] for mesh in original_meshes]))
 
         off_screen = False
-        visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
-        # visualize([original_point_cloud] + length_meshes, colors=['red'] + ['tan']*len(length_meshes), filename=f"designs/length_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+        # visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+        visualize([original_point_cloud] + length_meshes, colors=['red'] + ['tan']*len(length_meshes), filename=f"designs/length_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
         # visualize([original_point_cloud] + our_meshes, colors=['red'] + ['tan']*len(our_meshes), filename=f"designs/our_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
