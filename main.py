@@ -89,80 +89,6 @@ def score_points_to_box(points, box_x, box_y, box_z):
     bounding_box = points.max(axis=0) - points.min(axis=0)
     
     return np.linalg.norm(bounding_box - np.array([box_x, box_y, box_z]))
-    
-
-
-# def ransac_for_pointcloud(sample):
-#     N_SAMPLED_POINTS = 100
-#     K_ITERATIONS = 250
-#     SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
-#     original_pc = sample["point_cloud"]
-    
-#     # visualize(scaled_pcs, colors=['red', 'green', 'blue', 'purple'], filename=f"designs/pointcloud_scaled_{sample['category']}_{sample['object_id']}.png")
-
-
-#     best_pc, best_part, best_avg_distance = None, None, np.inf
-#     for scale in tqdm(SCALES, desc=f"Scaling for {sample['category']} {sample['object_id']}"):
-#         target_pc = original_pc.scale(scale, point=(0, 0, 0))
-#         points = target_pc.points
-#         for _ in range(K_ITERATIONS):
-#             # Pick N random points
-#             sampled_indices = np.random.choice(
-#                 points.shape[0], N_SAMPLED_POINTS, replace=False
-#             )
-#             shape_id = np.random.randint(0, len(Design.PART_LIBRARY))
-#             shape = Design.PART_LIBRARY[shape_id]
-#             sampled_points = points[sampled_indices]
-
-#             centroid, rotation = pca_from_points(sampled_points)
-
-#             # Create design part aligned with principal components
-#             part = AssembledComponent(
-#                 part_id=shape_id,
-#                 translation=centroid,
-#                 rotation=rotation,
-#             )
-
-#             axis_aligned_pc = points_centered @ np.linalg.inv(eigenvectors)
-
-#             if type(shape) is Box:
-#                 box_x, box_y, box_z = shape.x_length, shape.y_length, shape.z_length
-#                 avg_distance = np.mean(distance_points_to_box(axis_aligned_pc, box_x, box_y, box_z))
-#             elif type(shape) is Cylinder:
-#                 cylinder_axis = shape.axis
-#                 cylinder_radius = shape.radius
-#                 cylinder_height = shape.height
-#                 avg_distance = np.average(distance_points_to_cylinder(axis_aligned_pc, cylinder_axis, cylinder_radius, cylinder_height))
-#                 # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
-#             else:
-#                 print("Unknown shape type")
-
-#             # Calculate distances from points to mesh surface
-#             # mesh_points = part.mesh.triangulate().points
-#             # kdtree = ckdtree.cKDTree(mesh_points)
-#             # distances, _ = kdtree.query(points)
-
-#             # avg_distance = np.mean(distances)
-#             if avg_distance < best_avg_distance:
-#                 best_avg_distance = avg_distance
-#                 best_part = part
-#                 best_pc = target_pc
-#                 # visualize(
-#                 #     [best_pc, best_part.mesh],
-#                 #     colors=["red", "tan"],
-#                 #     filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
-#                 # )
-#                 # time.sleep(0.5)
-
-#     if best_part is not None:
-#         # Visualize the best part
-#         visualize(
-#             [best_pc, best_part.mesh],
-#             colors=["red", "tan"],
-#             filename=f"designs/best_part_{sample['category']}_{sample['object_id']}.png",
-#         )
-#     else:
-#         print("No part found")
 
 
 def arbitrary_primitives_strategy(sample, include_cylinders=False):
@@ -197,8 +123,9 @@ def arbitrary_length_strategy(sample):
     FOOTPRINTS = [(20, 20), (40, 20),(5,)]
     meshes = sample['meshes']
 
+    # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
+    # TODO: explore part hierarchy as well
     scales = np.linspace(0.1, 3.0, 30)
-    # scales = [1.0,]
     best_scale_score = np.inf
     best_scale_meshes = None
     best_scale = None
@@ -208,45 +135,25 @@ def arbitrary_length_strategy(sample):
         scale_meshes = []
         for mesh in scaled_meshes:
             centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
-            best_part, best_avg_distance = None, np.inf
+            best_part, best_mesh_score = None, np.inf
 
             for footprint in FOOTPRINTS:
                 lengths = np.array(bounds)
 
                 indices = find_closest_lengths_fit(bounds, footprint)
                 lengths[indices] = footprint
-                # if len(footprint) == 2:
-
-                #     idx1, idx2 = find_closest_lengths_fit(bounds, footprint)
-                #     lengths[idx1], lengths[idx2] = footprint
-                # else:
-                #     idx = find_closest_lengths_fit(bounds, footprint)
-                #     lengths[idx] = footprint[0]
 
                 modified_shape = Box(x_length=lengths[0], y_length=lengths[1], z_length=lengths[2])
-                avg_distance = score_mesh_fit(modified_shape, mesh.points, rotation)
-                # print(f"Footprint: {footprint}, Avg Distance: {avg_distance}")
-                if avg_distance < best_avg_distance:
-                    best_avg_distance = avg_distance
+                mesh_score = score_mesh_fit(modified_shape, mesh.points, rotation)
+
+                if mesh_score < best_mesh_score:
+                    best_mesh_score = mesh_score
                     best_part = AssembledComponent(part_id=-1,
                                                     translation=centroid,
                                                     rotation=rotation,
                                                     custom_component=modified_shape)
 
-            for shape_id, shape in Design.PART_LIBRARY.items():
-                base_shape = Design.PART_LIBRARY[shape_id]
-                modified_shape = copy.deepcopy(base_shape)
-                modified_shape.z_length = bounds[0]
-
-                avg_distance = score_mesh_fit(modified_shape, mesh.points, rotation)
-                # print(f"Shape ID: {shape_id}, Avg Distance: {avg_distance}")
-                if avg_distance < best_avg_distance:
-                    best_avg_distance = avg_distance
-                    best_part = AssembledComponent(part_id=-1,
-                                                    translation=centroid,
-                                                    rotation=rotation,
-                                                    custom_component=modified_shape)
-            scale_score += best_avg_distance
+            scale_score += best_mesh_score
             scale_meshes.append(best_part.mesh)
         if scale_score < best_scale_score:
             best_scale_score = scale_score
@@ -292,8 +199,6 @@ def our_primitives_strategy(sample):
     print(f"Best scale: {best_scale}")
 
     return best_scale_meshes, best_scale
-
-
 
 
 def score_mesh_fit(centered_mesh, points, rotation):
@@ -427,29 +332,6 @@ def get_rotation_matrix(axis, theta):
 
 
 if __name__ == "__main__":
-
-    # points = np.array([[0,0,0],[0,0,-3],[2,0,0],[0,2,0], [0,-2,3], [-1, -1, 0], [-3,0,1], [1,1,10]])
-    # correct_distances = np.array([2, 0, 0, 0, 0, (2-np.sqrt(2)), 1, 7])
-    # print(np.allclose(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6), correct_distances))
-    # print(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6))
-    # print(np.abs(distance_points_to_cylinder(points, np.array([0,0,1]), 2, 6) - correct_distances))
-    
-    # exit()
-
-    # Design.visualize_part_library()
-
-    # create_random_designs()
-    # visualize_txt_designs(GPT_DESIGNS)
-
-    # samples = get_shapenet_samples()
-    # for sample in samples:
-    #     visualize(
-    #         [sample["transformed_mesh"], sample["point_cloud"]],
-    #         colors=["tan", "red"],
-    #         filename=f"designs/shapenet_{sample['category']}_{sample['object_id']}.png",
-    #     )
-    #     ransac_for_pointcloud(sample)
-
 
     desired_models = [
         "1299",
