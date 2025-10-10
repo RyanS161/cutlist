@@ -1,6 +1,7 @@
 from nltk.corpus import wordnet as wn
 import os
 import pandas as pd
+import json
 
 def offset_to_word(offset, pos='n'):
     # offset: string or int, e.g. '02691156'
@@ -17,12 +18,11 @@ def get_shapenet_words():
             print(f"{offset}: {name} - {definition}")
 
 
-def collect_shapenet_data():
+def collect_shapenet_data(dir="/Users/ryanslocum/Downloads/cutlist/ShapeNetCore"):
 
     shapenet_data = []
-    shapenet_parent_dir = "/Users/ryanslocum/Downloads/cutlist/ShapeNetCore"
-    for category_id in os.listdir(shapenet_parent_dir):
-        category_folder = os.path.join(shapenet_parent_dir, category_id)
+    for category_id in os.listdir(dir):
+        category_folder = os.path.join(dir, category_id)
         if os.path.isdir(category_folder):
             if not category_id.isdigit():
                 continue
@@ -33,31 +33,57 @@ def collect_shapenet_data():
                 if os.path.isdir(model_folder):
                     model_file = os.path.join(model_folder, "models", "model_normalized.obj")
                     if os.path.isfile(model_file):
-                        shapenet_data.append((category_id, category, object_id))
+                        shapenet_data.append({
+                            "object_id": object_id,
+                            "category_id": category_id,
+                            "category": category,
+                        })
 
-    shapenet_df = pd.DataFrame(shapenet_data, columns=["category_id", "category", "object_id"])
-    # Print how many models per category
-    print(shapenet_df['category'].value_counts())
-    shapenet_df.to_csv("shapenet_models.csv", index=False)
+    shapenet_df = pd.DataFrame(shapenet_data)
+    # shapenet_df.to_csv("shapenet_models.csv", index=False)
 
-    stabletext2brick_parent_dir = "/Users/ryanslocum/Downloads/cutlist/StableText2Brick/data"
+    return shapenet_df
+
+
+def collect_partnet_data(dir="/Users/ryanslocum/Downloads/cutlist/PartNet-archive/data_v0"):
+    model_data = []
+    for folder in os.listdir(dir):
+        model_dir = os.path.join(dir, folder)
+        part_count = len(os.listdir(os.path.join(model_dir, "objs")))
+        meta_data = json.load(open(os.path.join(model_dir, "meta.json"), 'r'))
+        model_cat = meta_data.get("model_cat", "")
+        model_id = meta_data.get("model_id", "")
+        model_data.append({
+            "object_id": model_id,
+            "category": model_cat,
+            "model_dir": folder,
+            "part_count": part_count,
+        })
+    df = pd.DataFrame(model_data)
+    # save to csv
+    # df.to_csv(os.path.join(os.path.dirname(dir), "_model_data.csv"), index=False)
+    return df
+
+def get_brickgpt_data(dir="/Users/ryanslocum/Downloads/cutlist/StableText2Brick/data"):
     stabletext2brick_df = pd.DataFrame()
-    for file in os.listdir(stabletext2brick_parent_dir):
+    for file in os.listdir(dir):
         if file.endswith(".parquet"):
-            df = pd.read_parquet(os.path.join(stabletext2brick_parent_dir, file))
+            df = pd.read_parquet(os.path.join(dir, file))
             stabletext2brick_df = pd.concat([stabletext2brick_df, df], ignore_index=True)
     # print column names
-    print(stabletext2brick_df.columns)
+    # print(stabletext2brick_df.columns)
+    return stabletext2brick_df
 
 
-    # Add "captions" column to shapenet_df on matching category_id and object_id
-    merged_df = pd.merge(shapenet_df, stabletext2brick_df[['category_id', 'object_id', 'captions']], on=['category_id', 'object_id'], how='left')
+def merge_shapes_and_captions(objects_df, brickgpt_df):
+
+    merged_df = pd.merge(objects_df, brickgpt_df[['object_id', 'captions']], on=['object_id'], how='left')
 
     # remove duplicates
-    merged_df = merged_df.drop_duplicates(subset=['category_id', 'object_id'])
+    merged_df = merged_df.drop_duplicates(subset=['object_id'])
 
     # Print how many models have captions and how many do not
-    print(merged_df['captions'].notnull().sum(), merged_df['captions'].isnull().sum())
+    print(f"Models with captions: {merged_df['captions'].notnull().sum()}, Models without captions: {merged_df['captions'].isnull().sum()}")
     # print the category of models that do not have captions
     print(merged_df[merged_df['captions'].isnull()]['category'].value_counts())
 
@@ -65,6 +91,11 @@ def collect_shapenet_data():
     print(merged_df.sample(10))
 
 
-    merged_df.to_csv(os.path.join(shapenet_parent_dir, "shapenet_models_with_captions.csv"), index=False)
+    merged_df.to_csv("merged_csv.csv", index=False)
 
-collect_shapenet_data()
+    return merged_df
+
+partnet_df = collect_partnet_data(dir="/Users/ryanslocum/Downloads/cutlist/PartNet-archive/data_v0")
+brick_gpt_df = get_brickgpt_data(dir="/Users/ryanslocum/Downloads/cutlist/StableText2Brick/data")
+
+merge_shapes_and_captions(partnet_df, brick_gpt_df)

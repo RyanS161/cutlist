@@ -4,9 +4,8 @@ from scipy.spatial.transform import Rotation as R
 import pyvista as pv
 import pandas as pd
 import os
-from design import visualize
-from copy import deepcopy
 import json
+
 
 def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False):
     # Rotate mesh to stand upright
@@ -36,7 +35,11 @@ def get_shapenet_samples():
         dtype={"category_id": str},
     )
     # choose 5 random samples from each category
-    sample_df = df.groupby("category").apply(lambda x: x.sample(5, random_state=100)).reset_index(drop=True)
+    sample_df = (
+        df.groupby("category")
+        .apply(lambda x: x.sample(5, random_state=100))
+        .reset_index(drop=True)
+    )
     for _, row in sample_df.iterrows():
         category = row["category"]
         category_id = row["category_id"]
@@ -66,7 +69,7 @@ def get_shapenet_samples():
                 "transformed_mesh": mesh,
                 "point_cloud": point_cloud,
                 "category": category,
-                "object_id": object_id
+                "object_id": object_id,
             }
             samples.append(sample)
         else:
@@ -75,44 +78,63 @@ def get_shapenet_samples():
     return samples
 
 
+def extract_nested_objs(data, is_top_level=True):
+    """
+    Recursively extract all 'objs' arrays from nested JSON structure,
+    ignoring the top-level one.
+    """
+    all_objs = []
+
+    if isinstance(data, dict):
+        # If this dict has 'objs' and it's not the top level, collect them
+        if "objs" in data and not is_top_level:
+            all_objs.extend(data["objs"])
+
+        # Recursively process all values in the dict
+        for key, value in data.items():
+            if key == "children" or isinstance(value, (list, dict)):
+                all_objs.extend(extract_nested_objs(value, False))
+
+    elif isinstance(data, list):
+        # Process each item in the list
+        for item in data:
+            all_objs.extend(extract_nested_objs(item, False))
+
+    return all_objs
+
+
+def get_partnet_sample(dir):
+    sample = {}
+    sample["meshes"] = get_and_transform_partnet_meshes(dir)
+    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get(
+        "model_cat", ""
+    )
+    result_after_merging_json = json.load(
+        open(os.path.join(dir, "result_after_merging.json"), "r")
+    )
+    part_combinations = extract_nested_objs(result_after_merging_json)
+    sample["part_combinations"] = part_combinations
+    return sample
+
+
 def get_and_transform_partnet_meshes(dir):
-    original_meshes = []
+    original_meshes = {}
     combined_mesh = pv.PolyData()
     for file in os.listdir(os.path.join(dir, "objs")):
         if file.endswith(".obj"):
+            mesh_id = file.replace(".obj", "")
             mesh = pv.read(os.path.join(dir, "objs", file)).clean()
-            original_meshes.append(mesh)
+            original_meshes[mesh_id] = mesh
             combined_mesh = combined_mesh.merge(mesh)
 
     _, translation, scale = zero_shapenet_obj(combined_mesh, return_transfrom=True)
 
-    transformed_meshes = []
-    for mesh in original_meshes:
+    transformed_meshes = {}
+    for mesh_id, mesh in original_meshes.items():
         new_mesh = mesh.rotate_x(90)
         # scale to be 100 millimeters wide on the smallest side
         new_mesh = new_mesh.scale([scale, scale, scale])
         new_mesh = new_mesh.translate(translation)
-        transformed_meshes.append(new_mesh)
+        transformed_meshes[mesh_id] = new_mesh
 
     return transformed_meshes
-
-
-def get_model_data_from_partnet(dir):
-    model_data = []
-    for folder in os.listdir(dir):
-        model_dir = os.path.join(dir, folder)
-        part_count = len(os.listdir(os.path.join(model_dir, "objs")))
-        meta_data = json.load(open(os.path.join(model_dir, "meta.json"), 'r'))
-        model_cat = meta_data.get("model_cat", "")
-        model_id = meta_data.get("model_id", "")
-        model_data.append({
-            "model_dir": folder,
-            "part_count": part_count,
-            "model_cat": model_cat,
-            "model_id": model_id
-        })
-    # save to csv
-    df = pd.DataFrame(model_data)
-    df.to_csv(os.path.join(dir, "_model_data.csv"), index=False)
-    return model_data
-    

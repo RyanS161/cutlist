@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial import ckdtree
 from design import Design, visualize, AssembledComponent, Box, Cylinder
-from shapeNetHelper import get_shapenet_samples, get_and_transform_partnet_meshes
+from shapeNetHelper import get_shapenet_samples, get_and_transform_partnet_meshes, get_partnet_sample
 import pyvista as pv
 from tqdm import tqdm
 from itertools import permutations
@@ -92,7 +92,7 @@ def score_points_to_box(points, box_x, box_y, box_z):
 
 
 def arbitrary_primitives_strategy(sample, include_cylinders=False):
-    meshes = sample['meshes']
+    meshes = sample['meshes'].values()
     fitted_meshes = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
@@ -119,87 +119,90 @@ def arbitrary_primitives_strategy(sample, include_cylinders=False):
     return fitted_meshes
 
 
+    # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
+    # TODO: explore part hierarchy as well
 def arbitrary_length_strategy(sample):
     FOOTPRINTS = [(20, 20), (40, 20),(5,)]
     meshes = sample['meshes']
 
-    # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
-    # TODO: explore part hierarchy as well
-    scales = np.linspace(0.1, 3.0, 30)
-    best_scale_score = np.inf
-    best_scale_meshes = None
-    best_scale = None
-    for scale in scales:
-        scale_score = 0
-        scaled_meshes = [mesh.scale(scale) for mesh in meshes]
-        scale_meshes = []
-        for mesh in scaled_meshes:
-            centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
-            best_part, best_mesh_score = None, np.inf
+    result_score = 0
+    result_meshes = []
+    for mesh in meshes.values():
+        centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
+        best_part, best_mesh_score = None, np.inf
 
-            for footprint in FOOTPRINTS:
-                lengths = np.array(bounds)
+        for footprint in FOOTPRINTS:
+            lengths = np.array(bounds)
 
-                indices = find_closest_lengths_fit(bounds, footprint)
-                lengths[indices] = footprint
+            indices = find_closest_lengths_fit(bounds, footprint)
+            lengths[indices] = footprint
 
-                modified_shape = Box(x_length=lengths[0], y_length=lengths[1], z_length=lengths[2])
-                mesh_score = score_mesh_fit(modified_shape, mesh.points, rotation)
+            modified_shape = Box(x_length=lengths[0], y_length=lengths[1], z_length=lengths[2])
+            mesh_score = score_mesh_fit(modified_shape, mesh.points, rotation)
 
-                if mesh_score < best_mesh_score:
-                    best_mesh_score = mesh_score
-                    best_part = AssembledComponent(part_id=-1,
-                                                    translation=centroid,
-                                                    rotation=rotation,
-                                                    custom_component=modified_shape)
+            if mesh_score < best_mesh_score:
+                best_mesh_score = mesh_score
+                best_part = AssembledComponent(part_id=-1,
+                                                translation=centroid,
+                                                rotation=rotation,
+                                                custom_component=modified_shape)
 
-            scale_score += best_mesh_score
-            scale_meshes.append(best_part.mesh)
-        if scale_score < best_scale_score:
-            best_scale_score = scale_score
-            best_scale_meshes = scale_meshes
-            best_scale = scale
+        result_score += best_mesh_score
+        result_meshes.append(best_part.mesh)
 
-    print(f"Best scale: {best_scale}")
-
-    return best_scale_meshes, best_scale
+    return result_meshes, result_score
 
 def our_primitives_strategy(sample):
     meshes = sample['meshes']
+    result_score = 0 
+    result_meshes = []
+    for mesh in meshes.values():
+        point_cloud = mesh.points
+        centroid, rotation, bounds = fit_cuboid_to_points(point_cloud)
 
-    # scales = np.linspace(0.1, 3.0, 30)
-    scales = [1.0,]
+        best_part, best_mesh_score = None, np.inf
+
+        for part_id, part in Design.PART_LIBRARY.items():
+            part_lengths = np.array([part.x_length, part.y_length, part.z_length])
+
+            indices = find_closest_lengths_fit(bounds, part_lengths)
+
+            box_lengths = part_lengths[indices]
+            scoring_part = Box(x_length=box_lengths[0], y_length=box_lengths[1], z_length=box_lengths[2])
+
+            mesh_score = score_mesh_fit(scoring_part, point_cloud, rotation)
+
+            if mesh_score < best_mesh_score:
+                best_mesh_score = mesh_score
+                extra_rotation = desired_rotation_from_axis_order(indices).inv()
+                best_part = AssembledComponent(part_id=part_id,
+                                                translation=centroid,
+                                                rotation=rotation*extra_rotation)
+        result_score += best_mesh_score
+        result_meshes.append(best_part.mesh)
+
+    return result_meshes, result_score
+
+
+def search_over_scales(sample, strategy):
+    meshes = sample['meshes']
+    scales = np.linspace(0.5, 5.0, 30)
+
     best_scale_score = np.inf
     best_scale_meshes = None
     best_scale = None
     for scale in scales:
-        scale_score = 0
-        scaled_meshes = [mesh.scale(scale) for mesh in meshes]
-        scale_meshes = []
-        for mesh in scaled_meshes:
-            centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
-            best_part, best_avg_distance = None, np.inf
-            for shape_id, shape in Design.PART_LIBRARY.items():
-                avg_distance = score_mesh_fit(shape, mesh.points, rotation)
-                # print(f"Shape ID: {shape_id}, Avg Distance: {avg_distance}")
-                if avg_distance < best_avg_distance:
-                    best_avg_distance = avg_distance
-                    best_part = AssembledComponent(
-                        part_id=shape_id,
-                        translation=centroid,
-                        rotation=rotation,
-                    )
-            scale_score += best_avg_distance
-            scale_meshes.append(best_part.mesh)
-        if scale_score < best_scale_score:
-            best_scale_score = scale_score
-            best_scale_meshes = scale_meshes
+        scaled_sample = copy.deepcopy(sample)
+        scaled_sample['meshes'] = {k: mesh.scale(scale) for k, mesh in meshes.items()}
+        result_meshes, result_score = strategy(scaled_sample)
+        if result_score < best_scale_score:
+            best_scale_score = result_score
+            best_scale_meshes = result_meshes
             best_scale = scale
 
     print(f"Best scale: {best_scale}")
 
     return best_scale_meshes, best_scale
-
 
 def score_mesh_fit(centered_mesh, points, rotation):
     point_centroid = np.mean(points, axis=0)
@@ -249,6 +252,15 @@ def find_closest_lengths_fit(lengths_list, target):
             min_diff = diff
             best_perm = perm
     return best_perm
+
+def desired_rotation_from_axis_order(axes):
+    rotation_matrix = np.zeros((3,3))
+    for new_axis, old_axis in enumerate(axes):
+        rotation_matrix[new_axis, old_axis] = 1
+    if np.linalg.det(rotation_matrix) < 0:
+        # if the determinant is -1, we have a reflection, so swap two axes
+        rotation_matrix[0, :] *= -1
+    return R.from_matrix(rotation_matrix)
 
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
@@ -338,20 +350,22 @@ if __name__ == "__main__":
         "10027",
         "18258",
         "18740",
+        # "44970"
     ]
 
 
     # Need to investigate how to integrate the part hierarchy as well
     for num in desired_models:
-        original_meshes = get_and_transform_partnet_meshes(f"/Users/ryanslocum/Downloads/cutlist/scratch/{num}")
+        sample = get_partnet_sample(f"/Users/ryanslocum/Downloads/cutlist/scratch/{num}")
+        original_meshes = sample['meshes']
+        original_point_cloud = pv.PolyData(np.vstack([mesh.points[::10] for mesh in original_meshes.values()]))
+        off_screen = False
 
         arbitrary_meshes = arbitrary_primitives_strategy({"meshes": original_meshes})
-        length_meshes, best_scale = arbitrary_length_strategy({"meshes": original_meshes})
-        our_meshes, best_scale = our_primitives_strategy({"meshes": original_meshes})
+        visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
 
-        original_point_cloud = pv.PolyData(np.vstack([mesh.points[::10] for mesh in original_meshes]))
-
-        off_screen = False
-        # visualize([original_point_cloud] + arbitrary_meshes, colors=['red'] + ['tan']*len(arbitrary_meshes), filename=f"designs/arbitrary_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+        length_meshes, best_scale = search_over_scales(sample, arbitrary_length_strategy)
         visualize([original_point_cloud] + length_meshes, colors=['red'] + ['tan']*len(length_meshes), filename=f"designs/length_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
-        # visualize([original_point_cloud] + our_meshes, colors=['red'] + ['tan']*len(our_meshes), filename=f"designs/our_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
+
+        our_meshes, best_scale = search_over_scales(sample, our_primitives_strategy)
+        visualize([original_point_cloud] + our_meshes, colors=['red'] + ['tan']*len(our_meshes), filename=f"designs/our_fitted_meshes_{num}.png", axis_length=25, off_screen=off_screen)
