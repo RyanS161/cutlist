@@ -209,7 +209,7 @@ class AssembledComponent:
         transform_matrix[:3, :3] = self.rotation.as_matrix()
         transform_matrix[:3, 3] = self.translation
 
-        self.mesh = part_mesh_copy.transform(transform_matrix)
+        self.mesh = part_mesh_copy.transform(transform_matrix, inplace=True)
 
     def to_vector(self):
         return np.array(self.translation + self.rotation.as_euler())

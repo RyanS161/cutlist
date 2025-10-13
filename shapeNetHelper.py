@@ -5,6 +5,7 @@ import pyvista as pv
 import pandas as pd
 import os
 import json
+import treelib
 
 
 def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False):
@@ -78,42 +79,45 @@ def get_shapenet_samples():
     return samples
 
 
-def extract_nested_objs(data, is_top_level=True):
-    """
-    Recursively extract all 'objs' arrays from nested JSON structure,
-    ignoring the top-level one.
-    """
-    all_objs = []
+def tree_from_json(json_obj):
+    tree = treelib.Tree()
 
-    if isinstance(data, dict):
-        # If this dict has 'objs' and it's not the top level, collect them
-        if "objs" in data and not is_top_level:
-            all_objs.extend(data["objs"])
+    def add_nodes(node, parent_id=None):
+        node_id = node.get("id")
+        node_name = node.get("name", "")
+        node_objs = node.get("objs", [])
 
-        # Recursively process all values in the dict
-        for key, value in data.items():
-            if key == "children" or isinstance(value, (list, dict)):
-                all_objs.extend(extract_nested_objs(value, False))
+        # Use ori_id if id is not available
+        if node_id is None:
+            node_id = node.get("ori_id")
 
-    elif isinstance(data, list):
-        # Process each item in the list
-        for item in data:
-            all_objs.extend(extract_nested_objs(item, False))
+        if node_id is not None:
+            # Use the objs array as the node data
+            tree.create_node(
+                tag=f"{node_name}: {node_objs}",
+                identifier=node_id,
+                parent=parent_id,
+                data=node_objs,
+            )
 
-    return all_objs
+            for child in node.get("children", []):
+                add_nodes(child, parent_id=node_id)
+
+    # Handle both single object and array input
+    if isinstance(json_obj, list):
+        for item in json_obj:
+            add_nodes(item)
+    else:
+        add_nodes(json_obj)
+
+    return tree
 
 
 def get_partnet_sample(dir):
     sample = {}
     sample["meshes"] = get_and_transform_partnet_meshes(dir)
-    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get(
-        "model_cat", ""
-    )
-    result_after_merging_json = json.load(
-        open(os.path.join(dir, "result_after_merging.json"), "r")
-    )
-    part_combinations = extract_nested_objs(result_after_merging_json)
-    sample["part_combinations"] = part_combinations
+    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get("model_cat", "")
+    sample["part_tree"] = tree_from_json(json.load(open(os.path.join(dir, "result_after_merging.json"), "r")))
     return sample
 
 
