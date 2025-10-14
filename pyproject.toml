@@ -12,6 +12,11 @@ dependencies = [
     "pyarrow>=21.0.0",
     "pyvista>=0.46.3",
     "scipy>=1.16.2",
-    "snakeviz>=2.2.2",
     "treelib>=1.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.0",
+    "snakeviz>=2.2.2",
 ]

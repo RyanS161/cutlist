@@ -1,6 +1,5 @@
 import binvox_rw
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 import pyvista as pv
 import pandas as pd
 import os
@@ -53,7 +52,6 @@ def get_shapenet_samples():
             "model_normalized.obj",
         )
         if os.path.isfile(obj_file):
-
             mesh = zero_shapenet_obj(pv.read(obj_file))
             point_cloud = None
 
@@ -116,8 +114,12 @@ def tree_from_json(json_obj):
 def get_partnet_sample(dir):
     sample = {}
     sample["meshes"] = get_and_transform_partnet_meshes(dir)
-    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get("model_cat", "")
-    sample["part_tree"] = tree_from_json(json.load(open(os.path.join(dir, "result_after_merging.json"), "r")))
+    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get(
+        "model_cat", ""
+    )
+    sample["part_tree"] = tree_from_json(
+        json.load(open(os.path.join(dir, "result_after_merging.json"), "r"))
+    )
     return sample
 
 

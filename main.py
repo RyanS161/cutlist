@@ -5,32 +5,28 @@ from shapeNetHelper import get_partnet_sample
 import pyvista as pv
 from tqdm import tqdm
 from itertools import permutations
-import os, copy
+import copy
 
 
-def visualize_txt_designs(designs):
-    EXAMPLE_DESIGNS = {
-        "X": "3 0 0 0 0 0 -45\n3 0 0 0 0 0 45",
-        "T": "5 0 0 0 0 0 0\n5 0 0 0 0 0 90",
-        "H": "0 -40 0 0 0 0 0\n0  40 0 0 0 0 0\n2   0 0 0 0 0 90",
-        "Chair": "0 0 0 0 0 0 0\n0 60 0 0 0 0 0\n0 0 60 0 0 0 0\n0 60 60 0 0 0 0\n4 30 20 30 0 0 0\n3 30 20 120 0 0 0\n",
-        "House": "0 0 0 60 0 0 0\n0 160 0 60 0 0 0\n0 0 80 60 0 0 0\n0 160 80 60 0 0 0\n6 80 40 5 0 0 0\n6 80 40 125 0 0 0\n5 80 0 65 90 0 0\n5 80 80 65 90 0 0\n4 40 40 65 90 90 0\n4 120 40 65 90 90 0\n8 80 0 65 0 0 0\n",
-        "Box": "0 10 10 5 0 0 0\n0 150 10 5 0 0 0\n0 10 70 5 0 0 0\n0 150 70 5 0 0 0\n5 80 10 2.5 0 0 0\n5 80 70 2.5 0 0 0\n2 10 40 60 0 0 0\n2 150 40 60 0 0 0\n6 80 40 117.5 90 0 0\n6 80 40 2.5 90 0 0\n",
-    }
-    for letter, design_txt in designs.items():
-        design = Design(
-            assembledComponents=[],
-            bounds=np.array([[-200, 200], [-200, 200], [0, 200]]),
-        )
-        design.from_txt(design_txt, from_file=False)
-        design.visualize_design(filename=f"designs/design_{letter}")
-
-
-import numpy as np
+# def visualize_txt_designs(designs):
+#     EXAMPLE_DESIGNS = {
+#         "X": "3 0 0 0 0 0 -45\n3 0 0 0 0 0 45",
+#         "T": "5 0 0 0 0 0 0\n5 0 0 0 0 0 90",
+#         "H": "0 -40 0 0 0 0 0\n0  40 0 0 0 0 0\n2   0 0 0 0 0 90",
+#         "Chair": "0 0 0 0 0 0 0\n0 60 0 0 0 0 0\n0 0 60 0 0 0 0\n0 60 60 0 0 0 0\n4 30 20 30 0 0 0\n3 30 20 120 0 0 0\n",
+#         "House": "0 0 0 60 0 0 0\n0 160 0 60 0 0 0\n0 0 80 60 0 0 0\n0 160 80 60 0 0 0\n6 80 40 5 0 0 0\n6 80 40 125 0 0 0\n5 80 0 65 90 0 0\n5 80 80 65 90 0 0\n4 40 40 65 90 90 0\n4 120 40 65 90 90 0\n8 80 0 65 0 0 0\n",
+#         "Box": "0 10 10 5 0 0 0\n0 150 10 5 0 0 0\n0 10 70 5 0 0 0\n0 150 70 5 0 0 0\n5 80 10 2.5 0 0 0\n5 80 70 2.5 0 0 0\n2 10 40 60 0 0 0\n2 150 40 60 0 0 0\n6 80 40 117.5 90 0 0\n6 80 40 2.5 90 0 0\n",
+#     }
+#     for letter, design_txt in designs.items():
+#         design = Design(
+#             assembledComponents=[],
+#             bounds=np.array([[-200, 200], [-200, 200], [0, 200]]),
+#         )
+#         design.from_txt(design_txt, from_file=False)
+#         design.visualize_design(filename=f"designs/design_{letter}")
 
 
 def score_points_to_cylinder(points, cylinder_axis, cylinder_radius, cylinder_height):
-
     distance_from_axis = np.linalg.norm(
         points - (points @ cylinder_axis[:, None]) * cylinder_axis[:, None].T, axis=1
     )
@@ -65,7 +61,6 @@ def score_points_to_cylinder(points, cylinder_axis, cylinder_radius, cylinder_he
 
 
 def score_points_to_box(points, box_x, box_y, box_z):
-
     # Idea one - minimum distance to box surface
     # Problem: boxes can be arbitrarily long
     # half_extents = np.array([box_x/2, box_y/2, box_z/2])
@@ -114,7 +109,6 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     # else:
     #     score = len(intersection) / len(union)
 
-
     # Take two: faster???
     # Need to voxelize them in the same coordinate space
     original_voxels = original_mesh.voxelize(spacing=voxel_size)
@@ -123,13 +117,26 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     original_points = original_voxels.points
     fitted_points = fitted_voxels.points
 
-
     original_points_int = (original_points / voxel_size).astype(int)
     fitted_points_int = (fitted_points / voxel_size).astype(int)
-    
 
-    original_tuples = np.unique(original_points_int.view(np.dtype((np.void, original_points_int.dtype.itemsize * original_points_int.shape[1]))))
-    fitted_tuples = np.unique(fitted_points_int.view(np.dtype((np.void, fitted_points_int.dtype.itemsize * fitted_points_int.shape[1]))))
+    original_tuples = np.unique(
+        original_points_int.view(
+            np.dtype(
+                (
+                    np.void,
+                    original_points_int.dtype.itemsize * original_points_int.shape[1],
+                )
+            )
+        )
+    )
+    fitted_tuples = np.unique(
+        fitted_points_int.view(
+            np.dtype(
+                (np.void, fitted_points_int.dtype.itemsize * fitted_points_int.shape[1])
+            )
+        )
+    )
 
     intersection = len(np.intersect1d(original_tuples, fitted_tuples))
     union = len(np.union1d(original_tuples, fitted_tuples))
@@ -139,7 +146,6 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     else:
         score = intersection / union
 
-
     # visualize point clouds:
     # print(score)
     # original_pc = pv.PolyData(np.array(list(original_points)))
@@ -147,6 +153,7 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     # visualize([original_pc, fitted_pc], colors=["red", "blue"], off_screen=False)
 
     return score
+
 
 def arbitrary_primitives_strategy(sample, include_cylinders=False):
     meshes = sample["meshes"].values()
@@ -259,14 +266,14 @@ def search_over_part_hierarchy(sample, strategy, scale=1.0):
     # with hierarchy approach
     part_tree = sample["part_tree"]
 
-
     def iterate_nodes(part_tree, node_id, ignore=False):
-
         node_meshes = part_tree[node_id].data
         # merge meshes into one:
         merged_mesh = pv.merge([meshes[mesh_id] for mesh_id in node_meshes])
         root_result_meshes, _ = fit_and_score([merged_mesh], strategy)
-        root_score = voxelized_iou_score(merged_mesh, root_result_meshes[0], voxel_size=VOXEL_SIZE)
+        root_score = voxelized_iou_score(
+            merged_mesh, root_result_meshes[0], voxel_size=VOXEL_SIZE
+        )
 
         if part_tree[node_id].is_leaf():
             # Base case: if leaf node, fit the single mesh
@@ -277,11 +284,12 @@ def search_over_part_hierarchy(sample, strategy, scale=1.0):
             child_result_parts, _ = iterate_nodes(part_tree, child_node.identifier)
             children_parts.extend(child_result_parts)
             # result_score += child_result_score
-        
 
         # print("Root tag:", part_tree[node_id].tag)
         merged_child_parts = pv.merge([part for part in children_parts])
-        children_score = voxelized_iou_score(merged_mesh, merged_child_parts, voxel_size=VOXEL_SIZE)
+        children_score = voxelized_iou_score(
+            merged_mesh, merged_child_parts, voxel_size=VOXEL_SIZE
+        )
 
         if ignore or children_score > root_score:
             # print(f"Using children fit with score {children_score} over parent score {root_score}")
@@ -289,7 +297,6 @@ def search_over_part_hierarchy(sample, strategy, scale=1.0):
         else:
             # print(f"Using parent fit with score {root_score} over children score {children_score}")
             return root_result_meshes, root_score
-        
 
     result_parts, result_score = iterate_nodes(part_tree, part_tree.root, ignore=True)
 
@@ -475,7 +482,6 @@ def get_rotation_matrix(axis, theta):
 
 
 if __name__ == "__main__":
-
     desired_models = [
         "1299",
         "10027",

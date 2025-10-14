@@ -4,9 +4,29 @@ import pyvista as pv
 import os
 
 
-POSSIBLE_COLORS = ["lightblue", "lightgreen", "lightcoral", "lightyellow", "lightpink", "lightgray", "lightcyan", "wheat", "lavender", "mistyrose",]
+POSSIBLE_COLORS = [
+    "lightblue",
+    "lightgreen",
+    "lightcoral",
+    "lightyellow",
+    "lightpink",
+    "lightgray",
+    "lightcyan",
+    "wheat",
+    "lavender",
+    "mistyrose",
+]
 
-def visualize(meshes, colors=None, bounds=None, axis_length=0, camera_position="iso", filename="visualization", off_screen=True):
+
+def visualize(
+    meshes,
+    colors=None,
+    bounds=None,
+    axis_length=0,
+    camera_position="iso",
+    filename="visualization",
+    off_screen=True,
+):
     plotter = pv.Plotter(off_screen=off_screen)
     if colors is None:
         # Random colors for each mesh
@@ -33,11 +53,10 @@ def visualize(meshes, colors=None, bounds=None, axis_length=0, camera_position="
     if off_screen:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         plotter.screenshot(filename=filename)
-        
+
         # image = plotter.screenshot(return_img=True)
     else:
         plotter.show()
-
 
 
 class Part:
@@ -54,7 +73,10 @@ class Box(Part):
         self.x_length = x_length
         self.y_length = y_length
         self.z_length = z_length
-        super().__init__(pv.Cube, x_length=x_length, y_length=y_length, z_length=z_length)
+        super().__init__(
+            pv.Cube, x_length=x_length, y_length=y_length, z_length=z_length
+        )
+
 
 class Cylinder(Part):
     def __init__(self, radius, height, direction):
@@ -62,6 +84,7 @@ class Cylinder(Part):
         self.height = height
         self.direction = np.array(direction)
         super().__init__(pv.Cylinder, radius=radius, height=height, direction=direction)
+
 
 class Design:
     # PART_LIBRARY = {
@@ -170,7 +193,6 @@ class Design:
             colors.append(POSSIBLE_COLORS[part_id % len(POSSIBLE_COLORS)])
             meshes.append(translated_mesh)
 
-
         visualize(meshes, colors=colors, axis_length=100, filename=filename)
 
     def verify(self):
@@ -191,7 +213,13 @@ class Design:
 
 
 class AssembledComponent:
-    def __init__(self, part_id: int, translation: np.ndarray, rotation: R, custom_component: Part = None):
+    def __init__(
+        self,
+        part_id: int,
+        translation: np.ndarray,
+        rotation: R,
+        custom_component: Part = None,
+    ):
         if custom_component is not None:
             self.part_id = -1  # Indicate custom part
             part = custom_component
@@ -304,11 +332,7 @@ class AssembledComponent:
         translation = placement_point + offset
 
         # Align the new part with the surface normal
-        try:
-            rotation = R.align_vectors([face_normal], [[0, 0, 1]])[0]
-        except:
-            # If alignment fails, use identity rotation
-            rotation = R.from_euler("xyz", [0, 0, 0])
+        rotation = R.align_vectors([face_normal], [[0, 0, 1]])[0]
 
         return AssembledComponent(part_id, translation, rotation)
 
