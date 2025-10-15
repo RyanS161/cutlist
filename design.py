@@ -21,18 +21,23 @@ POSSIBLE_COLORS = [
 def visualize(
     meshes,
     colors=None,
+    opacities=None,
     bounds=None,
     axis_length=0,
     camera_position="iso",
     filename="visualization",
     off_screen=True,
+    text=None,
 ):
+    pv.global_theme.allow_empty_mesh = True
     plotter = pv.Plotter(off_screen=off_screen)
     if colors is None:
         # Random colors for each mesh
         colors = [POSSIBLE_COLORS[i % len(POSSIBLE_COLORS)] for i in range(len(meshes))]
-    for mesh, color in zip(meshes, colors):
-        plotter.add_mesh(mesh, color=color)
+    if opacities is None:
+        opacities = [1.0 for _ in range(len(meshes))]
+    for mesh, color, opacity in zip(meshes, colors, opacities):
+        plotter.add_mesh(mesh, color=color, opacity=opacity)
 
     # Add bounding box
     if bounds is not None:
@@ -46,6 +51,9 @@ def visualize(
         plotter.add_mesh(x_axis, color="red")
         plotter.add_mesh(y_axis, color="green")
         plotter.add_mesh(z_axis, color="blue")
+
+    if text is not None:
+        plotter.add_text(text, position="upper_edge", font_size=12, color="black")
 
     plotter.set_background("white")
     plotter.camera_position = camera_position

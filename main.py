@@ -95,22 +95,7 @@ def score_points_to_box(points, box_x, box_y, box_z):
 
 
 def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
-    # Take one: slow as hell
-    # original_voxels = original_mesh.voxelize(spacing=VOXEL_SIZE)
-    # fitted_voxels = fitted_mesh.voxelize(spacing=VOXEL_SIZE)
-
-    # original_points = set(map(tuple, original_voxels.points.astype(int)))
-    # fitted_points = set(map(tuple, fitted_voxels.points.astype(int)))
-    # intersection = original_points.intersection(fitted_points)
-    # union = original_points.union(fitted_points)
-
-    # if len(union) == 0:
-    #     score = 0.0
-    # else:
-    #     score = len(intersection) / len(union)
-
-    # Take two: faster???
-    # Need to voxelize them in the same coordinate space
+    # We may not have to do the voxelization operation if we know that the meshes are compositions of cuboids
     original_voxels = original_mesh.voxelize(spacing=voxel_size)
     fitted_voxels = fitted_mesh.voxelize(spacing=voxel_size)
 
@@ -148,15 +133,12 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
 
     # visualize point clouds:
     # print(score)
-    # original_pc = pv.PolyData(np.array(list(original_points)))
-    # fitted_pc = pv.PolyData(np.array(list(fitted_points)))
-    # visualize([original_pc, fitted_pc], colors=["red", "blue"], off_screen=False)
+    # visualize([original_voxels, fitted_voxels], colors=["red", "blue"], opacities=[0.8, 0.8], axis_length=25, off_screen=False)
 
     return score
 
 
-def arbitrary_primitives_strategy(sample, include_cylinders=False):
-    meshes = sample["meshes"].values()
+def arbitrary_primitives_strategy(meshes, include_cylinders=False):
     fitted_meshes = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
@@ -196,8 +178,6 @@ def arbitrary_primitives_strategy(sample, include_cylinders=False):
     return fitted_meshes
 
     # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
-    # TODO: explore part hierarchy as well
-    # TODO: Implement voxelized IoU score between created mesh and point cloud
 
 
 def fit_footprint_primitive(point_cloud):
@@ -269,27 +249,34 @@ def search_over_part_hierarchy(sample, strategy, scale=1.0):
     def iterate_nodes(part_tree, node_id, ignore=False):
         node_meshes = part_tree[node_id].data
         # merge meshes into one:
-        merged_mesh = pv.merge([meshes[mesh_id] for mesh_id in node_meshes])
+        # merged_mesh = pv.merge([meshes[mesh_id] for mesh_id in node_meshes])
+        original_meshes = [meshes[mesh_id] for mesh_id in node_meshes]
+        merged_mesh = pv.merge(
+            [mesh for mesh in arbitrary_primitives_strategy(original_meshes)]
+        )
+
+        if not part_tree[node_id].is_leaf():
+            children_parts = []
+            for child_node in part_tree.children(node_id):
+                child_result_parts, _ = iterate_nodes(part_tree, child_node.identifier)
+                children_parts.extend(child_result_parts)
+            # result_score += child_result_score
+
+            # print("Root tag:", part_tree[node_id].tag)
+            merged_child_parts = pv.merge([part for part in children_parts])
+            children_score = voxelized_iou_score(
+                merged_mesh, merged_child_parts, voxel_size=VOXEL_SIZE
+            )
+        else:
+            children_score = 0  # if leaf, no children to consider
+
         root_result_meshes, _ = fit_and_score([merged_mesh], strategy)
         root_score = voxelized_iou_score(
             merged_mesh, root_result_meshes[0], voxel_size=VOXEL_SIZE
         )
-
-        if part_tree[node_id].is_leaf():
-            # Base case: if leaf node, fit the single mesh
-            return root_result_meshes, root_score
-
-        children_parts = []
-        for child_node in part_tree.children(node_id):
-            child_result_parts, _ = iterate_nodes(part_tree, child_node.identifier)
-            children_parts.extend(child_result_parts)
-            # result_score += child_result_score
-
-        # print("Root tag:", part_tree[node_id].tag)
-        merged_child_parts = pv.merge([part for part in children_parts])
-        children_score = voxelized_iou_score(
-            merged_mesh, merged_child_parts, voxel_size=VOXEL_SIZE
-        )
+        # if not part_tree[node_id].is_leaf():
+        #     print(f"Root score: {root_score} child score: {children_score} for node [{part_tree[node_id].tag}] with children {[child.tag for child in part_tree.children(node_id)]}")
+        #     visualize([merged_mesh, root_result_meshes[0], merged_child_parts], colors=["blue", "red", "yellow"], opacities=[0.8, 0.8, 0.8], axis_length=25, off_screen=False)
 
         if ignore or children_score > root_score:
             # print(f"Using children fit with score {children_score} over parent score {root_score}")
@@ -320,7 +307,7 @@ def fit_and_score(meshes, strategy):
 
 def search_over_scales(sample, strategy):
     meshes = sample["meshes"]
-    scales = np.linspace(0.5, 4.0, 100)
+    scales = np.linspace(0.5, 4.0, 20)
 
     best_scale_score = np.inf
     best_scale_meshes = None
@@ -459,13 +446,13 @@ def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
         if best_fine_vol < best_vol:
             best_vol = best_fine_vol
 
-        pts_r = (best_rot @ pts_r.T).T
         R_total = best_rot @ R_total
+        pts_r = (R_total @ pts_c.T).T
 
     # Final alignment and bounds calculation
     aligned = (R_total @ pts_c.T).T
     x_length, y_length, z_length = aligned.max(axis=0) - aligned.min(axis=0)
-    rotation = R.from_matrix(R_total)
+    rotation = R.from_matrix(R_total.T)
 
     return center, rotation, (x_length, y_length, z_length)
 
@@ -482,13 +469,7 @@ def get_rotation_matrix(axis, theta):
 
 
 if __name__ == "__main__":
-    desired_models = [
-        "1299",
-        "10027",
-        "18258",
-        "18740",
-        # "44970"
-    ]
+    desired_models = ["1299", "10027", "18258", "18740", "44970"]
 
     # Need to investigate how to integrate the part hierarchy as well
     for num in desired_models:
@@ -501,14 +482,14 @@ if __name__ == "__main__":
         )
         off_screen = True
 
-        # arbitrary_meshes = arbitrary_primitives_strategy({"meshes": original_meshes})
-        # visualize(
-        #     [original_point_cloud] + arbitrary_meshes,
-        #     colors=["red"] + ["tan"] * len(arbitrary_meshes),
-        #     filename=f"designs/arbitrary_fitted_meshes_{num}.png",
-        #     axis_length=25,
-        #     off_screen=off_screen,
-        # )
+        arbitrary_meshes = arbitrary_primitives_strategy(original_meshes.values())
+        visualize(
+            [original_point_cloud] + arbitrary_meshes,
+            colors=["red"] + ["tan"] * len(arbitrary_meshes),
+            filename=f"designs/arbitrary_fitted_meshes_{num}.png",
+            axis_length=25,
+            off_screen=off_screen,
+        )
 
         length_meshes, best_scale = search_over_scales(sample, fit_footprint_primitive)
         visualize(

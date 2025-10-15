@@ -92,7 +92,7 @@ def tree_from_json(json_obj):
         if node_id is not None:
             # Use the objs array as the node data
             tree.create_node(
-                tag=f"{node_name}: {node_objs}",
+                tag=f"{node_name}",
                 identifier=node_id,
                 parent=parent_id,
                 data=node_objs,
