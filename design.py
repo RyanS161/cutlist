@@ -382,3 +382,52 @@ def create_random_designs():
             print(f"Design {i} is invalid and will not be visualized.")
             design.visualize_design(filename=f"designs/invalid_design_{i}")
             # design.to_txt(f"designs/invalid_design_{i}.txt")
+
+
+class WoodPart:
+    def __init__(self, transform: np.ndarray):
+        self.transform = transform
+
+    # def create(self):
+    #     return pv.Cube(x_length=self.x_len, y_length=self.y_len, z_length=self.z_len)
+
+
+class ArbitraryCuboid(WoodPart):
+    def __init__(self, dims: np.ndarray, transform: np.ndarray):
+        super().__init__(transform)
+        self.dims = dims
+
+    def get_mesh(self):
+        return pv.Cube(
+            x_length=self.dims[0], y_length=self.dims[1], z_length=self.dims[2]
+        ).transform(self.transform, inplace=True)
+
+    def to_text(self):
+        centroid = self.transform[:3, 3]
+        euler_angles = R.from_matrix(self.transform[:3, :3]).as_euler("xyz")
+        properties = [
+            max(round(self.dims[0]), 1),
+            max(round(self.dims[1]), 1),
+            max(round(self.dims[2]), 1),
+            round(centroid[0]),
+            round(centroid[1]),
+            round(centroid[2]),
+            round(euler_angles[0]),
+            round(euler_angles[1]),
+            round(euler_angles[2]),
+        ]
+
+        return " ".join([str(prop) for prop in properties])
+
+
+class WoodDesign:
+    def __init__(self, wood_parts: list[WoodPart]):
+        self.wood_parts = wood_parts
+
+    def to_txt(self):
+        sorted_parts = self.assembly_order()
+        return "\n".join([part.to_text() for part in sorted_parts])
+
+    def assembly_order(self):
+        # Sort wood parts by their z-coordinate (height)
+        return sorted(self.wood_parts, key=lambda part: part.centroid[2])

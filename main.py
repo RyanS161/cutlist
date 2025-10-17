@@ -1,12 +1,18 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-from design import Design, visualize, AssembledComponent, Box, Cylinder
+from design import (
+    Design,
+    visualize,
+    AssembledComponent,
+    Box,
+    Cylinder,
+    ArbitraryCuboid,
+)
 from shapeNetHelper import get_partnet_sample
 import pyvista as pv
 from tqdm import tqdm
 from itertools import permutations
 import copy
-
 
 # def visualize_txt_designs(designs):
 #     EXAMPLE_DESIGNS = {
@@ -138,43 +144,18 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     return score
 
 
-def arbitrary_primitives_strategy(meshes, include_cylinders=False):
+def arbitrary_primitives_strategy(meshes):
     fitted_meshes = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
         centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
 
-        options = [
-            Box(x_length=bounds[0], y_length=bounds[1], z_length=bounds[2]),
-        ]
-
-        if include_cylinders:
-            # Find two closest bounds to use as cylinder dimensions
-            idx1, idx2 = find_two_closest_lengths(bounds)
-            direction = np.ones(3)
-            direction[[idx1, idx2]] = 0
-
-            cylinder_radius = (bounds[idx1] + bounds[idx2]) / 2
-            cylinder_height = bounds[3 - idx1 - idx2]
-
-            options.append(
-                Cylinder(
-                    radius=cylinder_radius, height=cylinder_height, direction=direction
-                )
-            )
-
-        option_scores = [
-            score_mesh_fit(option, mesh.points, rotation) for option in options
-        ]
-        best_option = options[np.argmin(option_scores)]
-        fitted_part = AssembledComponent(
-            part_id=-1,
-            translation=centroid,
-            rotation=rotation,
-            custom_component=best_option,
-        )
+        transform = np.eye(4)
+        transform[:3, :3] = rotation.as_matrix()
+        transform[:3, 3] = centroid
+        fitted_part = ArbitraryCuboid(bounds, transform)
         #### do comparison to see the best mesh
-        fitted_meshes.append(fitted_part.mesh)
+        fitted_meshes.append(fitted_part.get_mesh())
     return fitted_meshes
 
     # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
@@ -386,7 +367,7 @@ def find_closest_lengths_fit(lengths_list, target):
 
 def desired_rotation_from_axis_order(axes):
     rotation_matrix = np.zeros((3, 3))
-    for new_axis, old_axis in enumerate(axes):
+    for old_axis, new_axis in enumerate(axes):
         rotation_matrix[new_axis, old_axis] = 1
     if np.linalg.det(rotation_matrix) < 0:
         # if the determinant is -1, we have a reflection, so swap two axes
@@ -395,6 +376,7 @@ def desired_rotation_from_axis_order(axes):
 
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
+# TODO: return transform instead of center
 def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
     MAX_ANGLE = np.pi / 4
     pts = np.asarray(points).astype(float)
@@ -491,20 +473,20 @@ if __name__ == "__main__":
             off_screen=off_screen,
         )
 
-        length_meshes, best_scale = search_over_scales(sample, fit_footprint_primitive)
-        visualize(
-            [original_point_cloud] + length_meshes,
-            colors=["red"] + ["tan"] * len(length_meshes),
-            filename=f"designs/length_fitted_meshes_{num}.png",
-            axis_length=25,
-            off_screen=off_screen,
-        )
+        # length_meshes, best_scale = search_over_scales(sample, fit_footprint_primitive)
+        # visualize(
+        #     [original_point_cloud] + length_meshes,
+        #     colors=["red"] + ["tan"] * len(length_meshes),
+        #     filename=f"designs/length_fitted_meshes_{num}.png",
+        #     axis_length=25,
+        #     off_screen=off_screen,
+        # )
 
-        our_meshes, best_scale = search_over_scales(sample, fit_our_primitive)
-        visualize(
-            [original_point_cloud] + our_meshes,
-            colors=["red"] + ["tan"] * len(our_meshes),
-            filename=f"designs/our_fitted_meshes_{num}.png",
-            axis_length=25,
-            off_screen=off_screen,
-        )
+        # our_meshes, best_scale = search_over_scales(sample, fit_our_primitive)
+        # visualize(
+        #     [original_point_cloud] + our_meshes,
+        #     colors=["red"] + ["tan"] * len(our_meshes),
+        #     filename=f"designs/our_fitted_meshes_{num}.png",
+        #     axis_length=25,
+        #     off_screen=off_screen,
+        # )
