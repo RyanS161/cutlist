@@ -1,12 +1,12 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from design import (
-    Design,
     visualize,
     AssembledComponent,
     Box,
-    Cylinder,
     ArbitraryCuboid,
+    WoodDesign,
+    LibraryPrimitive,
 )
 from shapeNetHelper import get_partnet_sample
 import pyvista as pv
@@ -66,7 +66,7 @@ def score_points_to_cylinder(points, cylinder_axis, cylinder_radius, cylinder_he
     return np.linalg.norm(distances)
 
 
-def score_points_to_box(points, box_x, box_y, box_z):
+def score_points_to_box(points, box_dims):
     # Idea one - minimum distance to box surface
     # Problem: boxes can be arbitrarily long
     # half_extents = np.array([box_x/2, box_y/2, box_z/2])
@@ -97,7 +97,7 @@ def score_points_to_box(points, box_x, box_y, box_z):
 
     bounding_box = points.max(axis=0) - points.min(axis=0)
 
-    return np.linalg.norm(bounding_box - np.array([box_x, box_y, box_z]))
+    return np.linalg.norm(bounding_box - np.array(box_dims))
 
 
 def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
@@ -144,8 +144,8 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
     return score
 
 
-def arbitrary_primitives_strategy(meshes):
-    fitted_meshes = []
+def arbitrary_cuboids_strategy(meshes):
+    fitted_parts = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
         centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
@@ -155,10 +155,8 @@ def arbitrary_primitives_strategy(meshes):
         transform[:3, 3] = centroid
         fitted_part = ArbitraryCuboid(bounds, transform)
         #### do comparison to see the best mesh
-        fitted_meshes.append(fitted_part.get_mesh())
-    return fitted_meshes
-
-    # TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
+        fitted_parts.append(fitted_part)
+    return WoodDesign(fitted_parts)
 
 
 def fit_footprint_primitive(point_cloud):
@@ -174,7 +172,7 @@ def fit_footprint_primitive(point_cloud):
         modified_shape = Box(
             x_length=lengths[0], y_length=lengths[1], z_length=lengths[2]
         )
-        mesh_score = score_mesh_fit(modified_shape, point_cloud, rotation)
+        mesh_score = score_cuboid_fit(modified_shape, point_cloud, rotation)
 
         if mesh_score < best_mesh_score:
             best_mesh_score = mesh_score
@@ -190,27 +188,24 @@ def fit_footprint_primitive(point_cloud):
 
 def fit_our_primitive(point_cloud):
     centroid, rotation, bounds = fit_cuboid_to_points(point_cloud)
+    transform = np.eye(4)
+    transform[:3, :3] = rotation.as_matrix()
+    transform[:3, 3] = centroid
     best_part, best_mesh_score = None, np.inf
-    for part_id, part in Design.PART_LIBRARY.items():
-        part_lengths = np.array([part.x_length, part.y_length, part.z_length])
-
+    for part_id, part_dims in LibraryPrimitive.PART_LIBRARY.items():
+        part_lengths = np.array(part_dims)
         indices = find_closest_lengths_fit(bounds, part_lengths)
-
         box_lengths = part_lengths[indices]
-        scoring_part = Box(
-            x_length=box_lengths[0], y_length=box_lengths[1], z_length=box_lengths[2]
-        )
-
-        mesh_score = score_mesh_fit(scoring_part, point_cloud, rotation)
+        extra_rotation = desired_rotation_from_axis_order(indices)
+        new_transform = transform.copy()
+        new_transform[:3, :3] = (
+            rotation.as_matrix() @ extra_rotation
+        )  # Is this the right transform?
+        mesh_score = score_cuboid_fit(box_lengths, point_cloud, new_transform)
 
         if mesh_score < best_mesh_score:
             best_mesh_score = mesh_score
-            extra_rotation = desired_rotation_from_axis_order(indices).inv()
-            best_part = AssembledComponent(
-                part_id=part_id,
-                translation=centroid,
-                rotation=rotation * extra_rotation,
-            )
+            best_part = LibraryPrimitive(part_id=part_id, transform=new_transform)
     return best_part, best_mesh_score
 
 
@@ -233,7 +228,10 @@ def search_over_part_hierarchy(sample, strategy, scale=1.0):
         # merged_mesh = pv.merge([meshes[mesh_id] for mesh_id in node_meshes])
         original_meshes = [meshes[mesh_id] for mesh_id in node_meshes]
         merged_mesh = pv.merge(
-            [mesh for mesh in arbitrary_primitives_strategy(original_meshes)]
+            [
+                part.get_mesh()
+                for part in arbitrary_cuboids_strategy(original_meshes).parts
+            ]
         )
 
         if not part_tree[node_id].is_leaf():
@@ -278,7 +276,7 @@ def fit_and_score(meshes, strategy):
         point_cloud = mesh.points
         best_part, best_mesh_score = strategy(point_cloud)
         result_score += best_mesh_score
-        resulting_parts.append(best_part.mesh)
+        resulting_parts.append(best_part.get_mesh())
 
     # Should change this to a single score: merge parts, merge point clouds, voxelize and compute IoU
     # result_score = voxelized_iou_score(result_meshes, meshes.values())
@@ -286,6 +284,7 @@ def fit_and_score(meshes, strategy):
     return resulting_parts, result_score
 
 
+# TODO: maybe we can try a hierarchical approach - first fit with coarse scales, then refine around the best scale
 def search_over_scales(sample, strategy):
     meshes = sample["meshes"]
     scales = np.linspace(0.5, 4.0, 20)
@@ -309,28 +308,12 @@ def search_over_scales(sample, strategy):
     return best_scale_meshes, best_scale
 
 
-def score_mesh_fit(centered_mesh, points, rotation):
+def score_cuboid_fit(lengths, points, transform):
     point_centroid = np.mean(points, axis=0)
     centered_points = points - point_centroid
-    aligned_points = centered_points @ rotation.as_matrix()
+    aligned_points = centered_points @ transform[:3, :3].T
 
-    if type(centered_mesh) is Box:
-        box_x, box_y, box_z = (
-            centered_mesh.x_length,
-            centered_mesh.y_length,
-            centered_mesh.z_length,
-        )
-        score = score_points_to_box(aligned_points, box_x, box_y, box_z)
-    elif type(centered_mesh) is Cylinder:
-        cylinder_direction = centered_mesh.direction
-        cylinder_radius = centered_mesh.radius
-        cylinder_height = centered_mesh.height
-        score = score_points_to_cylinder(
-            aligned_points, cylinder_direction, cylinder_radius, cylinder_height
-        )
-        # avg_distance = N_SAMPLED_POINTS - np.sum(avg_distance < 5)
-    else:
-        print(f"Unknown shape type: {type(centered_mesh)}")
+    score = score_points_to_box(aligned_points, lengths)
 
     return score
 
@@ -365,6 +348,7 @@ def find_closest_lengths_fit(lengths_list, target):
     return best_perm
 
 
+# TODO: I need to investigate this, this seems like it might be wrong
 def desired_rotation_from_axis_order(axes):
     rotation_matrix = np.zeros((3, 3))
     for old_axis, new_axis in enumerate(axes):
@@ -372,7 +356,7 @@ def desired_rotation_from_axis_order(axes):
     if np.linalg.det(rotation_matrix) < 0:
         # if the determinant is -1, we have a reflection, so swap two axes
         rotation_matrix[0, :] *= -1
-    return R.from_matrix(rotation_matrix)
+    return rotation_matrix.T
 
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
@@ -451,7 +435,10 @@ def get_rotation_matrix(axis, theta):
 
 
 if __name__ == "__main__":
-    desired_models = ["1299", "10027", "18258", "18740", "44970"]
+    desired_models = [
+        # "1299", "10027", "18258", "18740",
+        "44970"
+    ]
 
     # Need to investigate how to integrate the part hierarchy as well
     for num in desired_models:
@@ -464,7 +451,8 @@ if __name__ == "__main__":
         )
         off_screen = True
 
-        arbitrary_meshes = arbitrary_primitives_strategy(original_meshes.values())
+        arbitrary_design = arbitrary_cuboids_strategy(original_meshes.values())
+        arbitrary_meshes = [part.get_mesh() for part in arbitrary_design.parts]
         visualize(
             [original_point_cloud] + arbitrary_meshes,
             colors=["red"] + ["tan"] * len(arbitrary_meshes),
@@ -482,11 +470,11 @@ if __name__ == "__main__":
         #     off_screen=off_screen,
         # )
 
-        # our_meshes, best_scale = search_over_scales(sample, fit_our_primitive)
-        # visualize(
-        #     [original_point_cloud] + our_meshes,
-        #     colors=["red"] + ["tan"] * len(our_meshes),
-        #     filename=f"designs/our_fitted_meshes_{num}.png",
-        #     axis_length=25,
-        #     off_screen=off_screen,
-        # )
+        our_meshes, best_scale = search_over_scales(sample, fit_our_primitive)
+        visualize(
+            [original_point_cloud] + our_meshes,
+            colors=["red"] + ["tan"] * len(our_meshes),
+            filename=f"designs/our_fitted_meshes_{num}.png",
+            axis_length=25,
+            off_screen=off_screen,
+        )

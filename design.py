@@ -420,9 +420,50 @@ class ArbitraryCuboid(WoodPart):
         return " ".join([str(prop) for prop in properties])
 
 
+class LibraryPrimitive(WoodPart):
+    PART_LIBRARY = {
+        # Cubes / rectangular blocks
+        0: (120, 20, 20),  # Medium post
+        1: (160, 20, 20),  # Tall post
+        2: (120, 40, 20),  # Medium plank
+        3: (160, 40, 20),  # Tall plank
+        4: (80, 40, 5),  # Small square plate
+        5: (160, 40, 5),  # Small rectangle plate
+        6: (160, 80, 5),  # Large rectangle plate
+        # Cylinders (good for dowels, rods, posts)
+        # 7: Cylinder(radius=10, height=80, direction=(1, 0, 0)),  # Dowel
+        # 8: Cylinder(radius=80, height=10, direction=(0, 0, 1)),  # Thick disk
+    }
+
+    def __init__(self, part_id: int, transform: np.ndarray):
+        super().__init__(transform)
+        self.part_id = part_id
+
+    def get_mesh(self):
+        dims = LibraryPrimitive.PART_LIBRARY[self.part_id]
+        return pv.Cube(x_length=dims[0], y_length=dims[1], z_length=dims[2]).transform(
+            self.transform, inplace=True
+        )
+
+    def to_text(self):
+        centroid = self.transform[:3, 3]
+        euler_angles = R.from_matrix(self.transform[:3, :3]).as_euler("xyz")
+        properties = [
+            self.part_id,
+            round(centroid[0]),
+            round(centroid[1]),
+            round(centroid[2]),
+            round(euler_angles[0]),
+            round(euler_angles[1]),
+            round(euler_angles[2]),
+        ]
+
+        return " ".join([str(prop) for prop in properties])
+
+
 class WoodDesign:
-    def __init__(self, wood_parts: list[WoodPart]):
-        self.wood_parts = wood_parts
+    def __init__(self, parts: list[WoodPart]):
+        self.parts = parts
 
     def to_txt(self):
         sorted_parts = self.assembly_order()
@@ -431,3 +472,6 @@ class WoodDesign:
     def assembly_order(self):
         # Sort wood parts by their z-coordinate (height)
         return sorted(self.wood_parts, key=lambda part: part.centroid[2])
+
+    def clean_design(self):
+        pass
