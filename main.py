@@ -1,12 +1,10 @@
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from design import (
     visualize,
-    AssembledComponent,
-    Box,
     ArbitraryCuboid,
     WoodDesign,
     LibraryPrimitive,
+    FootprintPrimitive,
 )
 from shapeNetHelper import get_partnet_sample
 import pyvista as pv
@@ -148,11 +146,7 @@ def arbitrary_cuboids_strategy(meshes):
     fitted_parts = []
     for mesh in meshes:
         # Fit a primitive shape to the mesh
-        centroid, rotation, bounds = fit_cuboid_to_points(mesh.points)
-
-        transform = np.eye(4)
-        transform[:3, :3] = rotation.as_matrix()
-        transform[:3, 3] = centroid
+        transform, bounds = fit_cuboid_to_points(mesh.points)
         fitted_part = ArbitraryCuboid(bounds, transform)
         #### do comparison to see the best mesh
         fitted_parts.append(fitted_part)
@@ -160,48 +154,43 @@ def arbitrary_cuboids_strategy(meshes):
 
 
 def fit_footprint_primitive(point_cloud):
-    FOOTPRINTS = [(20, 20), (40, 20), (5,)]
-    centroid, rotation, bounds = fit_cuboid_to_points(point_cloud)
+    transform, bounds = fit_cuboid_to_points(point_cloud)
     best_part, best_mesh_score = None, np.inf
-    for footprint in FOOTPRINTS:
-        lengths = np.array(bounds)
-
+    for footprint_id, footprint in FootprintPrimitive.FOOTPRINTS.items():
         indices = find_closest_lengths_fit(bounds, footprint)
-        lengths[indices] = footprint
-
-        modified_shape = Box(
-            x_length=lengths[0], y_length=lengths[1], z_length=lengths[2]
-        )
-        mesh_score = score_cuboid_fit(modified_shape, point_cloud, rotation)
+        extra_rotation = desired_rotation_from_axis_order(indices)
+        new_transform = transform.copy()
+        new_transform[:3, :3] = transform[:3, :3] @ extra_rotation
+        part_lengths = np.array([footprint[0], footprint[1], bounds[indices[2]]])
+        mesh_score = score_cuboid_fit(part_lengths, point_cloud, new_transform)
 
         if mesh_score < best_mesh_score:
             best_mesh_score = mesh_score
-            best_part = AssembledComponent(
-                part_id=-1,
-                translation=centroid,
-                rotation=rotation,
-                custom_component=modified_shape,
+            best_part = FootprintPrimitive(
+                part_id=footprint_id, length=part_lengths[2], transform=new_transform
             )
 
     return best_part, best_mesh_score
 
 
 def fit_our_primitive(point_cloud):
-    centroid, rotation, bounds = fit_cuboid_to_points(point_cloud)
-    transform = np.eye(4)
-    transform[:3, :3] = rotation.as_matrix()
-    transform[:3, 3] = centroid
+    transform, bounds = fit_cuboid_to_points(point_cloud)
     best_part, best_mesh_score = None, np.inf
     for part_id, part_dims in LibraryPrimitive.PART_LIBRARY.items():
         part_lengths = np.array(part_dims)
         indices = find_closest_lengths_fit(bounds, part_lengths)
-        box_lengths = part_lengths[indices]
         extra_rotation = desired_rotation_from_axis_order(indices)
         new_transform = transform.copy()
         new_transform[:3, :3] = (
-            rotation.as_matrix() @ extra_rotation
+            transform[:3, :3] @ extra_rotation
         )  # Is this the right transform?
-        mesh_score = score_cuboid_fit(box_lengths, point_cloud, new_transform)
+
+        # visualize the fitted part
+        # fixed_part = LibraryPrimitive(part_id=part_id, transform=new_transform)
+        # old_part = LibraryPrimitive(part_id=part_id, transform=transform)
+        # visualize([fixed_part.get_mesh(), old_part.get_mesh(), pv.PolyData(point_cloud)], colors=["tan", "red", "blue"], opacities=[0.8, 0.8, 0.8], axis_length=25, off_screen=False)
+
+        mesh_score = score_cuboid_fit(part_lengths, point_cloud, new_transform)
 
         if mesh_score < best_mesh_score:
             best_mesh_score = mesh_score
@@ -211,7 +200,7 @@ def fit_our_primitive(point_cloud):
 
 def search_over_part_hierarchy(sample, strategy, scale=1.0):
     VOXEL_SIZE = 5 / scale
-    USE_HIERARCHY = True
+    USE_HIERARCHY = False
     meshes = sample["meshes"]
     # without hierarchy approach
 
@@ -288,6 +277,7 @@ def fit_and_score(meshes, strategy):
 def search_over_scales(sample, strategy):
     meshes = sample["meshes"]
     scales = np.linspace(0.5, 4.0, 20)
+    # scales = [1.0]
 
     best_scale_score = np.inf
     best_scale_meshes = None
@@ -341,14 +331,20 @@ def find_closest_lengths_fit(lengths_list, target):
     best_perm = None
     min_diff = np.inf
     for perm in perms:
-        diff = sum(abs(p - t) for p, t in zip(lengths[perm], target))
+        # compute the difference between the selected lengths and the target lengths
+        selected_lengths = lengths[list(perm)]
+        diff = np.linalg.norm(selected_lengths - np.array(target))
         if diff < min_diff:
             min_diff = diff
             best_perm = perm
+
+    if len(best_perm) == 2:
+        # append the remaining index
+        remaining_index = list({0, 1, 2} - set(best_perm))[0]
+        best_perm = np.array(list(best_perm) + [remaining_index])
     return best_perm
 
 
-# TODO: I need to investigate this, this seems like it might be wrong
 def desired_rotation_from_axis_order(axes):
     rotation_matrix = np.zeros((3, 3))
     for old_axis, new_axis in enumerate(axes):
@@ -356,11 +352,20 @@ def desired_rotation_from_axis_order(axes):
     if np.linalg.det(rotation_matrix) < 0:
         # if the determinant is -1, we have a reflection, so swap two axes
         rotation_matrix[0, :] *= -1
-    return rotation_matrix.T
+
+    # visualize the rotation
+    # arrows = [
+    #     pv.Arrow(start=(0, 0, 0), direction=(1,0,0), scale=25),
+    #     pv.Arrow(start=(0, 0, 0), direction=(0,1,0), scale=25),
+    #     pv.Arrow(start=(0, 0, 0), direction=(0,0,1), scale=25),
+    # ]
+    # rotated_arrows = [ arrow.rotate(rotation_matrix, point=(0,0,0), inplace=False) for arrow in arrows ]
+    # visualize(rotated_arrows, colors=["red", "green", "blue"], opacities=[0.8, 0.8, 0.8], axis_length=10, off_screen=False)
+
+    return rotation_matrix
 
 
 # Approach: iteratively rotate around each axis to minimize bounding box volume
-# TODO: return transform instead of center
 def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
     MAX_ANGLE = np.pi / 4
     pts = np.asarray(points).astype(float)
@@ -418,9 +423,12 @@ def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
     # Final alignment and bounds calculation
     aligned = (R_total @ pts_c.T).T
     x_length, y_length, z_length = aligned.max(axis=0) - aligned.min(axis=0)
-    rotation = R.from_matrix(R_total.T)
 
-    return center, rotation, (x_length, y_length, z_length)
+    transform = np.eye(4)
+    transform[:3, :3] = R_total.T
+    transform[:3, 3] = center
+
+    return transform, (x_length, y_length, z_length)
 
 
 def get_rotation_matrix(axis, theta):
@@ -435,10 +443,7 @@ def get_rotation_matrix(axis, theta):
 
 
 if __name__ == "__main__":
-    desired_models = [
-        # "1299", "10027", "18258", "18740",
-        "44970"
-    ]
+    desired_models = ["1299", "10027", "18258", "18740", "44970"]
 
     # Need to investigate how to integrate the part hierarchy as well
     for num in desired_models:
@@ -461,14 +466,14 @@ if __name__ == "__main__":
             off_screen=off_screen,
         )
 
-        # length_meshes, best_scale = search_over_scales(sample, fit_footprint_primitive)
-        # visualize(
-        #     [original_point_cloud] + length_meshes,
-        #     colors=["red"] + ["tan"] * len(length_meshes),
-        #     filename=f"designs/length_fitted_meshes_{num}.png",
-        #     axis_length=25,
-        #     off_screen=off_screen,
-        # )
+        length_meshes, best_scale = search_over_scales(sample, fit_footprint_primitive)
+        visualize(
+            [original_point_cloud] + length_meshes,
+            colors=["red"] + ["tan"] * len(length_meshes),
+            filename=f"designs/length_fitted_meshes_{num}.png",
+            axis_length=25,
+            off_screen=off_screen,
+        )
 
         our_meshes, best_scale = search_over_scales(sample, fit_our_primitive)
         visualize(

@@ -461,6 +461,42 @@ class LibraryPrimitive(WoodPart):
         return " ".join([str(prop) for prop in properties])
 
 
+class FootprintPrimitive(WoodPart):
+    FOOTPRINTS = {
+        0: (20, 20),
+        1: (40, 20),
+        2: (40, 5),
+        3: (80, 5),
+    }
+
+    def __init__(self, part_id: int, length: float, transform: np.ndarray):
+        super().__init__(transform)
+        self.part_id = part_id
+        self.length = length
+
+    def get_mesh(self):
+        dims = FootprintPrimitive.FOOTPRINTS[self.part_id]
+        return pv.Cube(
+            x_length=dims[0], y_length=dims[1], z_length=self.length
+        ).transform(self.transform, inplace=True)
+
+    def to_text(self):
+        centroid = self.transform[:3, 3]
+        euler_angles = R.from_matrix(self.transform[:3, :3]).as_euler("xyz")
+        properties = [
+            self.part_id,
+            self.length,
+            round(centroid[0]),
+            round(centroid[1]),
+            round(centroid[2]),
+            round(euler_angles[0]),
+            round(euler_angles[1]),
+            round(euler_angles[2]),
+        ]
+
+        return " ".join([str(prop) for prop in properties])
+
+
 class WoodDesign:
     def __init__(self, parts: list[WoodPart]):
         self.parts = parts
