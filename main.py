@@ -1,8 +1,8 @@
 import numpy as np
 from design import (
     visualize,
-    ArbitraryCuboid,
     WoodDesign,
+    ArbitraryCuboid,
     LibraryPrimitive,
     FootprintPrimitive,
 )
@@ -150,7 +150,7 @@ def arbitrary_cuboids_strategy(meshes):
         fitted_part = ArbitraryCuboid(bounds, transform)
         #### do comparison to see the best mesh
         fitted_parts.append(fitted_part)
-    return WoodDesign(fitted_parts)
+    return WoodDesign(fitted_parts, ArbitraryCuboid)
 
 
 def fit_footprint_primitive(point_cloud):
@@ -431,6 +431,9 @@ def fit_cuboid_to_points(points, coarse_steps=20, fine_steps=10):
     return transform, (x_length, y_length, z_length)
 
 
+# TODO: Filter target mesh to get rid of the weird tiny parts?
+
+
 def get_rotation_matrix(axis, theta):
     ct, st = np.cos(theta), np.sin(theta)
 
@@ -457,7 +460,10 @@ if __name__ == "__main__":
         off_screen = True
 
         arbitrary_design = arbitrary_cuboids_strategy(original_meshes.values())
-        arbitrary_meshes = [part.get_mesh() for part in arbitrary_design.parts]
+        arbitrary_design_text = arbitrary_design.to_txt()
+
+        post_text_design = WoodDesign.from_txt(arbitrary_design_text, ArbitraryCuboid)
+        arbitrary_meshes = [part.get_mesh() for part in post_text_design.parts]
         visualize(
             [original_point_cloud] + arbitrary_meshes,
             colors=["red"] + ["tan"] * len(arbitrary_meshes),
