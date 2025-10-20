@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=6:00:00
+#SBATCH --time=8:00:00
 #SBATCH --mem-per-cpu=8000
 #SBATCH --job-name=unzip_data
 #SBATCH --output=_jobs/unzip_data%j.out
@@ -106,13 +106,13 @@ echo "Deleted $deleted_count folders"
 
 du -sh data_v0
 
-# Compress the cleaned data back into a zip file
-echo "Compressing cleaned data -- $(date)"
-zip -qr cleaned_data_v0.zip data_v0
-echo "Compression complete -- $(date)"
+# Create an uncompressed tar archive of the cleaned data
+echo "Archiving cleaned data (no compression) -- $(date)"
+tar -cf cleaned_data_v0.tar data_v0
+echo "Archiving complete -- $(date)"
 
 echo "Copying cleaned data back to $SCRATCH/data/PartNet-archive/ -- $(date)"
-cp cleaned_data_v0.zip $SCRATCH/data/PartNet-archive/
+cp cleaned_data_v0.tar $SCRATCH/data/PartNet-archive/
 
 
 echo "Job completed -- $(date)"
