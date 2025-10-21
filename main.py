@@ -11,6 +11,9 @@ import pyvista as pv
 from tqdm import tqdm
 from itertools import permutations
 import copy
+import argparse
+import os
+import pandas as pd
 
 # def visualize_txt_designs(designs):
 #     EXAMPLE_DESIGNS = {
@@ -445,7 +448,7 @@ def get_rotation_matrix(axis, theta):
         return np.array([[ct, -st, 0], [st, ct, 0], [0, 0, 1]])
 
 
-if __name__ == "__main__":
+def local_test():
     desired_models = ["1299", "10027", "18258", "18740", "44970"]
 
     # Need to investigate how to integrate the part hierarchy as well
@@ -489,3 +492,51 @@ if __name__ == "__main__":
             axis_length=25,
             off_screen=off_screen,
         )
+
+
+def generate_data(data_directory):
+    desired_models = os.listdir(data_directory)
+    desired_models = list(filter(lambda x: x.isnumeric(), desired_models))
+    model_results = {}
+    for model in desired_models:
+        model_dir = os.path.join(data_directory, model)
+        sample = get_partnet_sample(model_dir)
+        original_meshes = sample["meshes"]
+        arbitrary_design = arbitrary_cuboids_strategy(original_meshes.values())
+        arbitrary_design_text = arbitrary_design.to_txt()
+        model_id = sample["model_id"]
+        model_results[model_id] = arbitrary_design_text
+
+    # save results as a csv file
+    lego_gpt_df = pd.read_csv(
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/cutlist/brickgpt_data.csv"
+    )
+    results_df = pd.DataFrame.from_dict(
+        model_results, orient="index", columns=["design_txt"]
+    )
+    results_df.index.name = "object_id"
+    merged_df = pd.merge(results_df, lego_gpt_df, on=["object_id"], how="left")
+
+    merged_df.to_csv("fitted_designs.csv", index=False)
+
+    # print some random samples
+    print(merged_df.sample(2))
+
+
+if __name__ == "__main__":
+    # Process args for input directory name:
+    LibraryPrimitive.visualize_part_library()
+
+    parser = argparse.ArgumentParser(description="Process mesh data")
+    parser.add_argument(
+        "--input_dir", type=str, required=False, help="Path to the input directory"
+    )
+    args = parser.parse_args()
+
+    generate_data(args.input_dir)
+
+    # local_test()
+
+# TODO: Write script that copyies both tar files, extracts them, collects brick data and creates partnet data, merges them, and saves to csv
+# TODO: clean up this file into the right parts (and make new generate data file)
+# TODO: Figure out how to put this our data into the training pipeline for the fine-tuning library

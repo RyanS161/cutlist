@@ -500,6 +500,33 @@ class LibraryPrimitive(WoodPart):
 
         return LibraryPrimitive(part_id=part_id, transform=transform)
 
+    @staticmethod
+    def visualize_part_library(filename="designs/part_library", spacing=200):
+        # Calculate grid dimensions for layout
+        num_parts = len(LibraryPrimitive.PART_LIBRARY)
+        cols = int(np.ceil(np.sqrt(num_parts)))
+        meshes, colors = [], []
+
+        for i, part_id in enumerate(LibraryPrimitive.PART_LIBRARY):
+            # Calculate grid position
+            row = i // cols
+            col = i % cols
+            part_mesh = LibraryPrimitive(
+                part_id=part_id, transform=np.eye(4)
+            ).get_mesh()
+
+            # Position in grid
+            x_offset = (col + 1) * spacing
+            y_offset = (row + 1) * spacing
+
+            # Translate the mesh to its grid position
+            translated_mesh = part_mesh.translate([x_offset, y_offset, 0])
+
+            colors.append(POSSIBLE_COLORS[part_id % len(POSSIBLE_COLORS)])
+            meshes.append(translated_mesh)
+
+        visualize(meshes, colors=colors, axis_length=100, filename=filename)
+
 
 class FootprintPrimitive(WoodPart):
     FOOTPRINTS = {

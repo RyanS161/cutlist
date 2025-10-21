@@ -77,7 +77,10 @@ def get_shapenet_samples():
     return samples
 
 
-def tree_from_json(json_obj):
+def tree_from_json(json_file):
+    with open(json_file, "r") as f:
+        json_obj = json.load(f)
+
     tree = treelib.Tree()
 
     def add_nodes(node, parent_id=None):
@@ -114,12 +117,11 @@ def tree_from_json(json_obj):
 def get_partnet_sample(dir):
     sample = {}
     sample["meshes"] = get_and_transform_partnet_meshes(dir)
-    sample["category"] = json.load(open(os.path.join(dir, "meta.json"), "r")).get(
-        "model_cat", ""
-    )
-    sample["part_tree"] = tree_from_json(
-        json.load(open(os.path.join(dir, "result_after_merging.json"), "r"))
-    )
+    with open(os.path.join(dir, "meta.json"), "r") as f:
+        json_obj = json.load(f)
+        sample["category"] = json_obj.get("model_cat", "")
+        sample["model_id"] = json_obj.get("model_id", "")
+    sample["part_tree"] = tree_from_json(os.path.join(dir, "result_after_merging.json"))
     return sample
 
 
