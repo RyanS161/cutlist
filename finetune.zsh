@@ -1,5 +1,3 @@
-#!/bin/zsh
-
 # Usage: ./finetune.zsh [PRETRAINED_DIR] [OUTPUT_DIR] [RUN_NAME] [DATASET_NAME]
 
 PRETRAINED_DIR="${1}"

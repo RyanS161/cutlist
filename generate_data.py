@@ -472,9 +472,7 @@ def generate_finetuning_data(data_df, output_dir=None):
         ["train", "test"], [train_entries, test_entries]
     ):
         if output_dir:
-            split_output_path = os.path.join(
-                output_dir, f"finetuning_data_{split_name}.jsonl"
-            )
+            split_output_path = os.path.join(output_dir, f"{split_name}.jsonl")
             with open(split_output_path, "w") as f:
                 for entry in split_entries:
                     f.write(json.dumps(entry) + "\n")
