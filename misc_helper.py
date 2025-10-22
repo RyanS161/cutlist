@@ -113,7 +113,12 @@ partnet_df = collect_partnet_data(
     dir="/Users/ryanslocum/Downloads/cutlist/PartNet-archive/data_v0"
 )
 brick_gpt_df = get_brickgpt_data(
-    dir="/Users/ryanslocum/Downloads/cutlist/StableText2Brick/data"
+    dir="/Users/ryanslocum/Documents/current_courses/semesterProject/StableText2Brick/data"
 )
+
+simplified_brick_gpt_df = brick_gpt_df[["object_id", "captions"]]
+simplified_brick_gpt_df = simplified_brick_gpt_df.drop_duplicates(subset=["object_id"])
+simplified_brick_gpt_df.to_csv("brickgpt_data.csv", index=False)
+
 
 merge_shapes_and_captions(partnet_df, brick_gpt_df)
