@@ -14,6 +14,9 @@ import copy
 import argparse
 import os
 import pandas as pd
+from joblib import Parallel, delayed
+import json
+from sklearn.model_selection import train_test_split
 
 
 ### Functions for fitting primitives to meshes
@@ -366,9 +369,11 @@ def search_over_scales(
 ### Functions for data generation and merging
 
 
-def generate_data(partnet_dir, brickgpt_dir, output):
+def generate_design_data(partnet_dir, brickgpt_dir, output=None, n_jobs=-1):
     # partnet_dir is the directory where partnet data is stored, with each model being a subfolder with a numeric name
     # brickgpt_dir is the directory where brickgpt data is stored
+    # n_jobs: number of parallel jobs (-1 uses all available cores)
+
     desired_models = os.listdir(partnet_dir)
     desired_models = list(filter(lambda x: x.isnumeric(), desired_models))
 
@@ -376,36 +381,45 @@ def generate_data(partnet_dir, brickgpt_dir, output):
     lego_gpt_df = get_brickgpt_data(dir=brickgpt_dir)
     lego_gpt_df = lego_gpt_df[["object_id", "captions"]]
     lego_gpt_df = lego_gpt_df.drop_duplicates(subset=["object_id"])
-    print("Starting partnet processing")
+    valid_object_ids = set(lego_gpt_df["object_id"].values)
 
-    counter = 0
-    partnet_models = {}
-    for model in tqdm(desired_models):
-        if counter > 500:
-            break
-
+    def process_single_model(model, partnet_dir, valid_object_ids):
+        """Process a single model and return its design text if valid."""
         model_dir = os.path.join(partnet_dir, model)
         sample = get_partnet_sample(model_dir, max_parts=100)
-        if sample is None:
-            continue
-        model_id = sample["model_id"]
 
-        if model_id not in lego_gpt_df["object_id"].values:
-            continue
-        counter += 1
+        if sample is None:
+            return None
+
+        model_id = sample["model_id"]
+        if model_id not in valid_object_ids:
+            return None
+
         original_meshes = sample["meshes"]
         arbitrary_design = arbitrary_cuboids_strategy(original_meshes.values())
-
-        if False:
-            arbitrary_meshes = [part.get_mesh() for part in arbitrary_design.parts]
-            visualize(
-                arbitrary_meshes,
-                # colors=["tan"] * len(arbitrary_meshes),
-                filename=f"designs/arbitrary_fitted_meshes_{model}.png",
-            )
-
         arbitrary_design_text = arbitrary_design.to_txt()
-        partnet_models[model_id] = arbitrary_design_text
+
+        return (model_id, arbitrary_design_text)
+
+    print(
+        f"Starting partnet processing with {n_jobs if n_jobs > 0 else 'all available'} cores"
+    )
+
+    # Process models in parallel with progress bar
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_single_model)(model, partnet_dir, valid_object_ids)
+        for model in tqdm(desired_models, desc="Processing models")
+    )
+
+    # Filter out None results and convert to dictionary
+    partnet_models = {
+        model_id: design_txt
+        for result in results
+        if result is not None
+        for model_id, design_txt in [result]
+    }
+
+    print(f"Successfully processed {len(partnet_models)} models")
 
     partnet_df = pd.DataFrame.from_dict(
         partnet_models, orient="index", columns=["design_txt"]
@@ -413,7 +427,57 @@ def generate_data(partnet_dir, brickgpt_dir, output):
     partnet_df.index.name = "object_id"
     merged_df = pd.merge(partnet_df, lego_gpt_df, on=["object_id"], how="left")
 
-    merged_df.to_csv(output, index=False)
+    if output:
+        merged_df.to_csv(output, index=False)
+
+    return merged_df
+
+
+def create_instruction(caption):
+    instruction = (
+        "Create a wooden model of the input. Format your response as a list of wooden pieces: "
+        "<dimensions> <position> <rotation>, where piece position is x y z and piece rotation is rx ry rz. "
+        "All values are space separated, and pieces are separated with a newline\n\n"
+        "### Input:\n"
+        f"{caption}"
+    )
+    return instruction
+
+
+def generate_finetuning_data(data_df, output_dir=None):
+    # Generating fine-tuning data
+
+    finetuning_entries = []
+    for index, row in data_df.iterrows():
+        design_txt = row["design_txt"]
+        # parse the captions as an array of strings
+        captions = row["captions"].strip("[]").split("'\n '")
+        for caption in captions:
+            caption = caption.strip().strip("'").strip()
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": create_instruction(caption)},
+                {"role": "assistant", "content": design_txt},
+            ]
+            finetuning_entry = {"messages": messages}
+
+            finetuning_entries.append(finetuning_entry)
+
+    # Split into train, val, test
+    train_entries, test_entries = train_test_split(
+        finetuning_entries, test_size=0.1, random_state=42
+    )
+
+    for split_name, split_entries in zip(
+        ["train", "test"], [train_entries, test_entries]
+    ):
+        if output_dir:
+            split_output_path = os.path.join(
+                output_dir, f"finetuning_data_{split_name}.jsonl"
+            )
+            with open(split_output_path, "w") as f:
+                for entry in split_entries:
+                    f.write(json.dumps(entry) + "\n")
 
 
 ### Functions for testing
@@ -493,9 +557,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output", type=str, required=True, help="Path to save the generated CSV data"
     )
+    parser.add_argument(
+        "--n_jobs",
+        type=int,
+        default=-1,
+        help="Number of parallel jobs to use (-1 for all available cores, default: -1)",
+    )
     args = parser.parse_args()
 
-    generate_data(args.partnet_dir, args.brickgpt_dir, args.output)
+    generate_design_data(args.partnet_dir, args.brickgpt_dir, args.output, args.n_jobs)
+
+    data_df = pd.read_csv(
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/output.csv"
+    )
+
+    generate_finetuning_data(
+        data_df,
+        output_dir="/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data",
+    )
 
 
 # TODO: Write script that copies both tar files, extracts them, collects brick data and creates partnet data, merges them, and saves to csv
