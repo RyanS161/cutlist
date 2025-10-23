@@ -28,7 +28,7 @@ args=(
     --load_best_model_at_end
 
     # Optimizations
-    --bf16
+    --bf16 True
 
     # LoRA parameters
     --use_peft
@@ -43,4 +43,4 @@ args=(
     --report_to wandb
 )
 
-trl sft "${args[@]}"
+uv run trl sft "${args[@]}"

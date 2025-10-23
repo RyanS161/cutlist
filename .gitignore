@@ -10,3 +10,4 @@ pointnet/
 PartNet-archive/
 uv.lock
 scratch/
+wandb/
