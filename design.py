@@ -67,6 +67,8 @@ def visualize(
     else:
         plotter.show()
 
+    plotter.close()
+
 
 class WoodPart:
     def __init__(self, transform: np.ndarray):
@@ -134,18 +136,49 @@ class ArbitraryCuboid(WoodPart):
 
 
 class LibraryPrimitive(WoodPart):
+    # ORIGINAL PARTS:
+    # PART_LIBRARY = {
+    #     # Cubes / rectangular blocks
+    #     0: (120, 20, 20),  # Medium post
+    #     1: (160, 20, 20),  # Tall post
+    #     2: (120, 40, 20),  # Medium plank
+    #     3: (160, 40, 20),  # Tall plank
+    #     4: (80, 40, 5),  # Small square plate
+    #     5: (160, 40, 5),  # Small rectangle plate
+    #     6: (160, 80, 5),  # Large rectangle plate
+    # }
+    # PARTS FROM MILLI:
     PART_LIBRARY = {
-        # Cubes / rectangular blocks
-        0: (120, 20, 20),  # Medium post
-        1: (160, 20, 20),  # Tall post
-        2: (120, 40, 20),  # Medium plank
-        3: (160, 40, 20),  # Tall plank
-        4: (80, 40, 5),  # Small square plate
-        5: (160, 40, 5),  # Small rectangle plate
-        6: (160, 80, 5),  # Large rectangle plate
-        # Cylinders (good for dowels, rods, posts)
-        # 7: Cylinder(radius=10, height=80, direction=(1, 0, 0)),  # Dowel
-        # 8: Cylinder(radius=80, height=10, direction=(0, 0, 1)),  # Thick disk
+        # 48x24 with lengths 100 to 500
+        0: (48, 24, 100),
+        1: (48, 24, 150),
+        2: (48, 24, 200),
+        3: (48, 24, 250),
+        4: (48, 24, 300),
+        5: (48, 24, 350),
+        6: (48, 24, 400),
+        7: (48, 24, 450),
+        8: (48, 24, 500),
+        # 28x28 with lengths 100 to 500
+        9: (28, 28, 100),
+        10: (28, 28, 150),
+        11: (28, 28, 200),
+        12: (28, 28, 250),
+        13: (28, 28, 300),
+        14: (28, 28, 350),
+        15: (28, 28, 400),
+        16: (28, 28, 450),
+        17: (28, 28, 500),
+        # 7mm thick plywood with varying sizes
+        18: (7, 100, 100),
+        19: (7, 200, 100),
+        20: (7, 300, 100),
+        21: (7, 400, 100),
+        22: (7, 500, 100),
+        23: (7, 100, 200),
+        24: (7, 300, 200),
+        25: (7, 400, 200),
+        26: (7, 500, 200),
     }
 
     def __init__(self, part_id: int, transform: np.ndarray):
@@ -218,11 +251,33 @@ class LibraryPrimitive(WoodPart):
 
 
 class FootprintPrimitive(WoodPart):
+    # ORIGINAL FOOTPRINTS:
+    # FOOTPRINTS = {
+    #     0: (20, 20),
+    #     1: (40, 20),
+    #     2: (40, 5),
+    #     3: (80, 5),
+    # }
+    # FOOTPRINTS FROM MILLI:
     FOOTPRINTS = {
-        0: (20, 20),
-        1: (40, 20),
-        2: (40, 5),
-        3: (80, 5),
+        # 48x24 with arbitrary length
+        0: (48, 24),
+        # 28x28 with arbitrary length
+        1: (28, 28),
+        # 7mm thick plywood with varying widths
+        2: (
+            7,
+            50,
+        ),  # It would be better if we could just say anything with thickness 7 is fine, but I need to fix the code for that
+        3: (7, 100),
+        4: (7, 150),
+        5: (7, 200),
+        6: (7, 250),
+        7: (7, 300),
+        8: (7, 350),
+        9: (7, 400),
+        10: (7, 450),
+        11: (7, 500),
     }
 
     def __init__(self, part_id: int, length: float, transform: np.ndarray):

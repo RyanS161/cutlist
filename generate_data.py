@@ -272,13 +272,12 @@ def fit_library_primitive(point_cloud):
 ### Functions for searching over part hierarchies and scales
 
 
-def search_over_part_hierarchy(sample, strategy, scale=1.0):
-    VOXEL_SIZE = 5 / scale
-    USE_HIERARCHY = False
+def search_over_part_hierarchy(sample, strategy, scale=1.0, use_hierarchy=True):
+    VOXEL_SIZE = 5 * scale
     meshes = sample["meshes"]
     # without hierarchy approach
 
-    if not USE_HIERARCHY:
+    if not use_hierarchy:
         result_meshes = fit_with_strategy(meshes.values(), strategy)
         merged_mesh = pv.merge(
             [
@@ -344,17 +343,31 @@ def search_over_scales(
     scales=[
         1,
     ],
+    use_hierarchy=True,
+    filename="test",  # TODO: Remove this
 ):
     meshes = sample["meshes"]
 
     best_scale_score = np.inf
     best_scale_meshes = None
     best_scale = None
-    for scale in scales:
+    for scale in tqdm(scales):
         scaled_sample = copy.deepcopy(sample)
         scaled_sample["meshes"] = {k: mesh.scale(scale) for k, mesh in meshes.items()}
         result_meshes, result_score = search_over_part_hierarchy(
-            scaled_sample, strategy
+            scaled_sample, strategy, scale=scale, use_hierarchy=use_hierarchy
+        )
+
+        pc = pv.PolyData(
+            np.vstack([mesh.points[::10] for mesh in scaled_sample["meshes"].values()])
+        )
+        visualize(
+            [pc] + result_meshes,
+            colors=["red"] + ["tan"] * len(result_meshes),
+            filename=f"{filename}_score{result_score * 100:.0f}_scale{scale * 10:.0f}.png",
+            axis_length=100,
+            off_screen=True,
+            text=f"Scale: {scale: .4f}, Score: {result_score:.4f}",
         )
         if result_score < best_scale_score:
             best_scale_score = result_score
@@ -508,9 +521,14 @@ def local_test():
             off_screen=off_screen,
         )
 
-        search_scales = np.linspace(0.5, 4.0, 20)
+        search_scales = np.linspace(1.0, 5.0, 25)
+        use_hierarchy = True
         length_meshes, best_scale = search_over_scales(
-            sample, fit_footprint_primitive, scales=search_scales
+            sample,
+            fit_footprint_primitive,
+            scales=search_scales,
+            use_hierarchy=use_hierarchy,
+            filename=f"designs/length_fitted_meshes_{num}",
         )
         visualize(
             [original_point_cloud] + length_meshes,
@@ -521,7 +539,11 @@ def local_test():
         )
 
         our_meshes, best_scale = search_over_scales(
-            sample, fit_library_primitive, scales=search_scales
+            sample,
+            fit_library_primitive,
+            scales=search_scales,
+            use_hierarchy=use_hierarchy,
+            filename=f"designs/our_fitted_meshes_{num}",
         )
         visualize(
             [original_point_cloud] + our_meshes,
@@ -533,8 +555,8 @@ def local_test():
 
 
 if __name__ == "__main__":
-    # local_test()
-    # exit()
+    local_test()
+    exit()
 
     # Process args for input directory name:
     parser = argparse.ArgumentParser(
