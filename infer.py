@@ -15,6 +15,7 @@ def main():
     args = parser.parse_args()
 
     llm = LLM(model_name=args.model_name)
+
     caption = input("Enter a prompt, or <Return> to exit: ")
 
     while True:
@@ -39,7 +40,7 @@ def main():
         result_ids = llm(
             prompt,
             return_as_ids=True,
-            max_new_tokens=10,
+            max_new_tokens=1000,
             temperature=0.6,
             top_k=20,
             top_p=1.0,
