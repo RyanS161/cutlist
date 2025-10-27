@@ -15,10 +15,10 @@ def main():
     args = parser.parse_args()
 
     llm = LLM(model_name=args.model_name)
-    prompt = input("Enter a prompt, or <Return> to exit: ")
+    caption = input("Enter a prompt, or <Return> to exit: ")
 
     while True:
-        if not prompt:
+        if not caption:
             break
 
         seed = input("Enter a generation seed (default=42): ")
@@ -30,9 +30,9 @@ def main():
         start_time = time.time()
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": create_instruction(prompt)},
+            {"role": "user", "content": create_instruction(caption)},
         ]
-        llm.tokenizer.apply_chat_template(
+        prompt = llm.tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, return_tensors="pt"
         )
 
@@ -51,7 +51,7 @@ def main():
         print("Generated output:", output)
         print("Generation time:", end_time - start_time)
 
-        prompt = input("Enter another prompt, or <Return> to exit: ")
+        caption = input("Enter another prompt, or <Return> to exit: ")
 
 
 if __name__ == "__main__":
