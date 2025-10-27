@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --time=8:00:00
+#SBATCH --time=14:00:00
 #SBATCH -c 4
-#SBATCH --mem-per-cpu=8G
-#SBATCH --gpus=rtx_3090:1
+#SBATCH --mem-per-cpu=16G
+#SBATCH --gpus=rtx_4090:1
 #SBATCH --job-name=finetuning
 #SBATCH --output=_jobs/finetuning%j.out
 #SBATCH --tmp=32G
