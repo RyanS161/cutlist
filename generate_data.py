@@ -498,6 +498,7 @@ def generate_finetuning_data(data_df, output_dir=None):
         ["train", "test"], [train_entries, test_entries]
     ):
         if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
             split_output_path = os.path.join(output_dir, f"{split_name}.jsonl")
             with open(split_output_path, "w") as f:
                 for entry in split_entries:
@@ -572,8 +573,8 @@ def local_test():
 
 
 if __name__ == "__main__":
-    local_test()
-    exit()
+    # local_test()
+    # exit()
 
     # Process args for input directory name:
     parser = argparse.ArgumentParser(
@@ -602,15 +603,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    generate_design_data(args.partnet_dir, args.brickgpt_dir, args.output, args.n_jobs)
-
-    data_df = pd.read_csv(
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/output.csv"
+    intermediate_csv = os.path.join(args.output, "intermediate.csv")
+    data_df = generate_design_data(
+        args.partnet_dir, args.brickgpt_dir, intermediate_csv, args.n_jobs
     )
 
+    finetuning_output_dir = os.path.join(args.output, "finetuning_data")
     generate_finetuning_data(
         data_df,
-        output_dir="/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data",
+        output_dir=finetuning_output_dir,
     )
 
 
