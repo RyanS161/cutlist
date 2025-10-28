@@ -3,7 +3,7 @@ from scipy.spatial.transform import Rotation as R
 import pyvista as pv
 import os
 from typing import Union
-
+from PIL import Image
 
 POSSIBLE_COLORS = [
     "lightblue",
@@ -26,12 +26,12 @@ def visualize(
     bounds=None,
     axis_length=0,
     camera_position="iso",
-    filename="visualization",
-    off_screen=True,
+    filename=None,
+    show_image=False,
     text=None,
 ):
     pv.global_theme.allow_empty_mesh = True
-    plotter = pv.Plotter(off_screen=off_screen)
+    plotter = pv.Plotter(off_screen=filename is not None or not show_image)
     if colors is None:
         # Random colors for each mesh
         colors = [POSSIBLE_COLORS[i % len(POSSIBLE_COLORS)] for i in range(len(meshes))]
@@ -42,7 +42,7 @@ def visualize(
 
     # Add bounding box
     if bounds is not None:
-        bounds = bounds.flatten()
+        bounds = np.array(bounds).flatten()
         bounding_box = pv.Box(bounds)
         plotter.add_mesh(bounding_box, color="red", style="wireframe", line_width=2)
     if axis_length > 0:
@@ -59,15 +59,143 @@ def visualize(
     plotter.set_background("white")
     plotter.camera_position = camera_position
     # Create parent directory if it doesn't exist
-    if off_screen:
+    if filename is not None:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         plotter.screenshot(filename=filename)
 
-        # image = plotter.screenshot(return_img=True)
-    else:
+    if show_image:
         plotter.show()
 
+    image = plotter.screenshot(return_img=True)
     plotter.close()
+    return image
+
+
+def normalize_cuboid_rotation_to_positive(rot_matrix):
+    """
+    Find an equivalent rotation for a cuboid that has all positive Euler angles.
+
+    Strategy:
+    1. Generate all 8 symmetry transformations of a cuboid
+    2. Apply each symmetry to the rotation matrix
+    3. Convert each result to Euler angles
+    4. Find the one where all angles are in [0, 180)
+
+    Args:
+        rot_matrix: 3x3 rotation matrix
+
+    Returns:
+        euler_angles: (rx, ry, rz) all in range [0, 180)
+        rot_matrix: equivalent rotation matrix with positive Euler angles
+    """
+
+    # Add early return for if all angles are already positive
+    euler = R.from_matrix(rot_matrix).as_euler("xyz", degrees=True)
+    if np.all(euler >= 0) and np.all(euler < 180):
+        return euler, rot_matrix
+
+    symmetries = [
+        np.eye(3),
+        R.from_euler("x", 180, degrees=True).as_matrix(),
+        R.from_euler("y", 180, degrees=True).as_matrix(),
+        R.from_euler("z", 180, degrees=True).as_matrix(),
+        R.from_euler("xy", [180, 180], degrees=True).as_matrix(),
+        R.from_euler("xz", [180, 180], degrees=True).as_matrix(),
+        R.from_euler("yz", [180, 180], degrees=True).as_matrix(),
+        R.from_euler("xyz", [180, 180, 180], degrees=True).as_matrix(),
+    ]
+
+    for sym in symmetries:
+        # Apply symmetry transformation
+        combined = rot_matrix @ sym
+        # Convert to Euler angles
+        euler = R.from_matrix(combined).as_euler("xyz", degrees=True)
+
+        # Normalize to [0, 360) range
+        euler = euler % 360
+
+        # Check if all angles are in [0, 180)
+        if np.all(euler < 180):
+            return euler, combined
+
+    # Fallback: if no perfect match, choose the one with most positive angles
+    print("Entering fallback")
+    best_euler = None
+    best_matrix = None
+    best_score = -1
+
+    for sym in symmetries:
+        combined = rot_matrix @ sym
+        euler = R.from_matrix(combined).as_euler("xyz", degrees=True)
+        euler = euler % 360
+
+        # Count how many angles are in [0, 180)
+        score = np.sum(euler < 180)
+        if score > best_score:
+            best_score = score
+            best_euler = euler % 180  # Force into [0, 180)
+            best_matrix = combined
+
+    return best_euler, best_matrix
+
+
+# Function for testing the above function because it's finnicky and AI generated and I don't trust it
+# def test_normalization():
+#     """
+#     Test that normalization preserves cuboid orientation.
+#     Tests with random rotations and verifies the cuboid looks identical.
+#     """
+#     print("Testing normalization with random rotations...\n")
+
+#     num_tests = 20
+#     all_passed = True
+
+#     for test_num in range(num_tests):
+#         # Generate random Euler angles (including negative values)
+#         random_angles = np.random.uniform(-180, 180, size=3)
+
+#         # Create rotation matrix and apply to cuboid
+#         original_rot = R.from_euler("xyz", random_angles, degrees=True).as_matrix()
+
+#         # Normalize to positive angles
+#         normalized_angles, normalized_rot = normalize_cuboid_rotation_to_positive(original_rot)
+
+#         # Check if all angles are positive and in [0, 180)
+#         angles_positive = np.all(normalized_angles >= 0) and np.all(normalized_angles < 180)
+
+#         # Verify the cuboids are actually the same by comparing vertices
+#         # Create cuboid with different dimensions to avoid cube symmetries
+#         original_cuboid = pv.Cube(x_length=50, y_length=100, z_length=200)
+#         original_points = original_cuboid.points @ original_rot.T
+#         normalized_points = original_cuboid.points @ normalized_rot.T
+
+#         # Check if points match (allowing small numerical error)
+#         points_match = np.allclose(
+#             np.sort(original_points.flatten()),
+#             np.sort(normalized_points.flatten()),
+#             atol=1e-10
+#         )
+
+#         test_passed = angles_positive and points_match
+
+#         if not test_passed or test_num < 5:  # Show first 5 tests always
+#             status = "✓ PASS" if test_passed else "✗ FAIL"
+#             print(f"Test {test_num + 1}: {status}")
+#             print(f"  Original angles:    [{random_angles[0]:7.2f}, {random_angles[1]:7.2f}, {random_angles[2]:7.2f}]")
+#             print(f"  Normalized angles:  [{normalized_angles[0]:7.2f}, {normalized_angles[1]:7.2f}, {normalized_angles[2]:7.2f}]")
+#             print(f"  All positive (< 180): {angles_positive}")
+#             print(f"  Orientation preserved: {points_match}")
+#             print()
+
+#         if not test_passed:
+#             all_passed = False
+
+#     if all_passed:
+#         print(f"✓ All {num_tests} tests passed!")
+#     else:
+#         print(f"✗ Some tests failed")
+
+#     return all_passed
 
 
 class WoodPart:
@@ -77,8 +205,22 @@ class WoodPart:
     # def create(self):
     #     return pv.Cube(x_length=self.x_len, y_length=self.y_len, z_length=self.z_len)
 
-    def get_euler_angles(self):
-        return R.from_matrix(self.transform[:3, :3]).as_euler("xyz", degrees=True)
+    def get_int_euler_angles(self):
+        original_euler_angles = (
+            R.from_matrix(self.transform[:3, :3])
+            .as_euler("xyz", degrees=True)
+            .round()
+            .astype(int)
+        )
+        rounded_matrix = R.from_euler(
+            "xyz", original_euler_angles, degrees=True
+        ).as_matrix()
+        # return R.from_matrix(self.transform[:3, :3]).as_euler("xyz", degrees=True).astype(int)
+        euler_angles, _ = normalize_cuboid_rotation_to_positive(rounded_matrix)
+
+        euler_angles = euler_angles.astype(int)
+
+        return euler_angles
 
 
 class ArbitraryCuboid(WoodPart):
@@ -93,7 +235,7 @@ class ArbitraryCuboid(WoodPart):
 
     def to_text(self):
         centroid = self.transform[:3, 3]
-        euler_angles = self.get_euler_angles()
+        euler_angles = self.get_int_euler_angles()
         properties = [
             round(self.dims[0]),
             round(self.dims[1]),
@@ -101,9 +243,9 @@ class ArbitraryCuboid(WoodPart):
             round(centroid[0]),
             round(centroid[1]),
             round(centroid[2]),
-            round(euler_angles[0]),
-            round(euler_angles[1]),
-            round(euler_angles[2]),
+            euler_angles[0],
+            euler_angles[1],
+            euler_angles[2],
         ]
 
         # ignore parts that are invalid (zero or negative dimensions)
@@ -193,15 +335,15 @@ class LibraryPrimitive(WoodPart):
 
     def to_text(self):
         centroid = self.transform[:3, 3]
-        euler_angles = self.get_euler_angles()
+        euler_angles = self.get_int_euler_angles()
         properties = [
             self.part_id,
             round(centroid[0]),
             round(centroid[1]),
             round(centroid[2]),
-            round(euler_angles[0]),
-            round(euler_angles[1]),
-            round(euler_angles[2]),
+            euler_angles[0],
+            euler_angles[1],
+            euler_angles[2],
         ]
 
         return " ".join([str(prop) for prop in properties])
@@ -293,16 +435,16 @@ class FootprintPrimitive(WoodPart):
 
     def to_text(self):
         centroid = self.transform[:3, 3]
-        euler_angles = self.get_euler_angles()
+        euler_angles = self.get_int_euler_angles()
         properties = [
             self.part_id,
             self.length,
             round(centroid[0]),
             round(centroid[1]),
             round(centroid[2]),
-            round(euler_angles[0]),
-            round(euler_angles[1]),
-            round(euler_angles[2]),
+            euler_angles[0],
+            euler_angles[1],
+            euler_angles[2],
         ]
 
         return " ".join([str(prop) for prop in properties])
@@ -362,3 +504,38 @@ class WoodDesign:
 
     def clean_design(self):
         pass
+
+    def visualize_img(self, **kwargs):
+        meshes = [part.get_mesh() for part in self.parts]
+        return visualize(meshes, **kwargs)
+
+    def visualize_gif(self, filename, fps=1):
+        meshes = [part.get_mesh() for part in self.parts]
+        images = []
+        for i in range(len(meshes)):
+            image = visualize(
+                meshes,
+                colors=["tan"] * len(meshes),
+                opacities=[
+                    1.0,
+                ]
+                * (i + 1)
+                + [
+                    0.1,
+                ]
+                * (len(meshes) - i - 1),
+                show_image=False,
+            )
+            images.append(image)
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        frames = [Image.fromarray(img) for img in images]
+        frame_one = frames[0]
+        frame_one.save(
+            filename,
+            format="GIF",
+            append_images=frames,
+            save_all=True,
+            duration=(1000 // fps),
+            loop=0,
+        )
