@@ -95,7 +95,7 @@ class LLM:
 class Cutlist:
     def __init__(self, model_name_or_path: str, device: str = "auto"):
         self.model_name_or_path = model_name_or_path
-        self.max_parts = 100
+        self.max_parts = 40
         self.temperature = 0.6
         # self.temperature_increase = cfg.temperature_increase
         # self.max_temperature = cfg.max_temperature
@@ -153,12 +153,13 @@ class Cutlist:
         result_ids = self.llm(
             prompt,
             return_as_ids=True,
-            max_new_tokens=18,
+            max_new_tokens=19,
             temperature=self.temperature,
             top_k=self.top_k,
             top_p=self.top_p,
         )
 
+        print("Raw generated ids:", result_ids)
         if self.llm.tokenizer.eos_token_id in result_ids:
             return None
 
