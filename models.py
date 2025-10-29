@@ -5,7 +5,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.cache_utils import DynamicCache
 from generate_data import create_instruction
 
-from design import WoodDesign, ArbitraryPrimitive
+from design import WoodDesign, ArbitraryCuboid
 
 
 def get_device() -> str:
@@ -126,6 +126,6 @@ class Cutlist:
         )
         output_text = self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
 
-        design = WoodDesign.from_txt(output_text, ArbitraryPrimitive)
+        design = WoodDesign.from_txt(output_text, ArbitraryCuboid)
 
         return design

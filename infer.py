@@ -42,7 +42,7 @@ def main():
         design_image_path = os.path.join(output_dir, "output.png")
         design_gif_path = os.path.join(output_dir, "output.gif")
 
-        design.visualize_img(filename=design_image_path)
+        design.visualize_img(filename=design_image_path, text=caption)
         design.visualize_gif(filename=design_gif_path)
 
         print("Saved results to", output_dir)
