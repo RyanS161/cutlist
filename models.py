@@ -153,7 +153,7 @@ class Cutlist:
         result_ids = self.llm(
             prompt,
             return_as_ids=True,
-            max_new_tokens=19,
+            max_new_tokens=18,
             temperature=self.temperature,
             top_k=self.top_k,
             top_p=self.top_p,
