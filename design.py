@@ -478,6 +478,10 @@ class WoodDesign:
         self.design_type = design_type
         self.text = None
 
+    def add_part(self, part: WoodPart):
+        self.parts.append(part)
+        self.text = None  # Invalidate cached text representation
+
     def to_txt(self):
         if self.text is not None:
             return self.text

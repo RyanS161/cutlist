@@ -108,6 +108,11 @@ class Cutlist:
         self.llm = LLM(self.model_name_or_path, self.device)
 
     def __call__(self, caption: str):
+        design = self.generate_design(caption)
+        return design
+
+    def generate_design(self, caption: str) -> WoodDesign:
+        design = WoodDesign([], ArbitraryCuboid)
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": create_instruction(caption)},
@@ -116,16 +121,34 @@ class Cutlist:
             messages, add_generation_prompt=True, return_tensors="pt"
         )
 
+        for _ in range(self.max_parts):
+            self.llm.save_state()
+            part_txt = self.generate_part(prompt)
+            print("Generated part:", part_txt)
+            # check if EOS is in part_txt
+            if "<EOS>" in part_txt:
+                print("End of design generation.")
+                break
+            try:
+                part = ArbitraryCuboid.from_txt(part_txt)
+            except Exception as e:
+                print("Error parsing part:", e)
+                self.llm.rollback_to_saved_state()
+                continue
+
+            # If we successfully parsed a part, we can add it to the design
+            design.add_part(part)
+
+        return design
+
+    def generate_part(self, prompt: str):
         result_ids = self.llm(
             prompt,
             return_as_ids=True,
-            max_new_tokens=1000,
-            temperature=0.6,
-            top_k=20,
-            top_p=1.0,
+            max_new_tokens=18,
+            temperature=self.temperature,
+            top_k=self.top_k,
+            top_p=self.top_p,
         )
-        output_text = self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
 
-        design = WoodDesign.from_txt(output_text, ArbitraryCuboid)
-
-        return design
+        return self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
