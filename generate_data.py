@@ -476,8 +476,13 @@ def generate_finetuning_data(data_df, output_dir=None):
     finetuning_entries = []
     for index, row in data_df.iterrows():
         design_txt = row["design_txt"]
-        # parse the captions as an array of strings
-        captions = row["captions"].strip("[]").split("'\n '")
+
+        if isinstance(row["captions"], str):
+            # parse the captions as an array of strings
+            captions = row["captions"].strip("[]").split("'\n '")
+        else:
+            captions = row["captions"]
+
         for caption in captions:
             caption = caption.strip().strip("'").strip()
             messages = [
@@ -572,6 +577,24 @@ def local_test():
         )
 
 
+# Get a random model from the finetuning data and visualize it
+def visualize_random_finetuning_model(finetuning_data_path):
+    with open(finetuning_data_path, "r") as f:
+        lines = f.readlines()
+        random_line = np.random.choice(lines)
+        entry = json.loads(random_line)
+        messages = entry["messages"]
+        design_txt = messages[-1]["content"]
+        design = WoodDesign.from_txt(design_txt, ArbitraryCuboid)
+        meshes = [part.get_mesh() for part in design.parts]
+        visualize(
+            meshes,
+            colors=["tan"] * len(meshes),
+            filename="./random_finetuning_model.png",
+            show_image=True,
+        )
+
+
 if __name__ == "__main__":
     # local_test()
     # exit()
@@ -619,7 +642,5 @@ if __name__ == "__main__":
 
 # TODO: Investigate RL training with some score for the assemblability of the parts.
 # Reward could be based on proximity to other parts (overlapping bounding boxes are penalized, close but not overlapping are rewarded, far away are penalized)
-# TODO: Write a function that checks random designs from text and visualizes them
-
 
 # TODO: Get inference script working so that we can generate one block at a time
