@@ -121,16 +121,15 @@ class Cutlist:
             messages, add_generation_prompt=True, return_tensors="pt"
         )
 
-        for _ in range(self.max_parts):
+        for i in range(self.max_parts):
             self.llm.save_state()
             part_txt = self.generate_part(prompt)
-            print("Generated part:", part_txt)
-            # check if EOS is in part_txt
-            if "<EOS>" in part_txt:
+            print(f"Generated part {i}:", part_txt)
+            if not part_txt:
                 print("End of design generation.")
                 break
             try:
-                part = ArbitraryCuboid.from_txt(part_txt)
+                part = ArbitraryCuboid.from_text(part_txt)
             except Exception as e:
                 print("Error parsing part:", e)
                 self.llm.rollback_to_saved_state()
