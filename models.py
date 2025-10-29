@@ -3,6 +3,16 @@ import copy
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.cache_utils import DynamicCache
+from generate_data import create_instruction
+
+from design import WoodDesign, ArbitraryPrimitive
+
+
+def get_device() -> str:
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        return "mps"  # Apple Silicon
+    else:
+        return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class LLM:
@@ -13,7 +23,7 @@ class LLM:
     def __init__(
         self,
         model_name: str,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        device: str = get_device(),
     ):
         self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -80,3 +90,42 @@ class LLM:
     def rollback_to_saved_state(self) -> None:
         self.kv_cache = self.kv_cache_saved
         self.input_ids_cache = self.input_ids_cache_saved
+
+
+class Cutlist:
+    def __init__(self, model_name_or_path: str, device: str = "auto"):
+        self.model_name_or_path = model_name_or_path
+        self.max_parts = 100
+        self.temperature = 0.6
+        # self.temperature_increase = cfg.temperature_increase
+        # self.max_temperature = cfg.max_temperature
+        self.top_k = 20
+        self.top_p = 1.0
+        self.device = get_device() if device == "auto" else device
+
+        self.instruction_fn = create_instruction
+
+        self.llm = LLM(self.model_name_or_path, self.device)
+
+    def __call__(self, caption: str):
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": create_instruction(caption)},
+        ]
+        prompt = self.llm.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt"
+        )
+
+        result_ids = self.llm(
+            prompt,
+            return_as_ids=True,
+            max_new_tokens=1000,
+            temperature=0.6,
+            top_k=20,
+            top_p=1.0,
+        )
+        output_text = self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
+
+        design = WoodDesign.from_txt(output_text, ArbitraryPrimitive)
+
+        return design

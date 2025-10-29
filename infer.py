@@ -1,8 +1,8 @@
 import time
 import transformers
-from models import LLM
-from generate_data import create_instruction
+from models import Cutlist
 import argparse
+import os
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
     )
     args = parser.parse_args()
 
-    llm = LLM(model_name=args.model_name)
+    model = Cutlist(model_name_or_path=args.model_name)
 
     caption = input("Enter a prompt, or <Return> to exit: ")
 
@@ -24,32 +24,28 @@ def main():
 
         seed = input("Enter a generation seed (default=42): ")
         seed = int(seed) if seed else 42
+        output_dir = input("Enter a directory to save the output (default=./output): ")
+        output_dir = output_dir if output_dir else "./output/"
+        os.makedirs(os.path.dirname(output_dir), exist_ok=True)
         transformers.set_seed(seed)
 
         # Generate bricks
         print("Generating...")
         start_time = time.time()
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": create_instruction(caption)},
-        ]
-        prompt = llm.tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
-        )
-
-        result_ids = llm(
-            prompt,
-            return_as_ids=True,
-            max_new_tokens=1000,
-            temperature=0.6,
-            top_k=20,
-            top_p=1.0,
-        )
-
-        output = llm.tokenizer.decode(result_ids, skip_special_tokens=True)
+        design = model(caption)
         end_time = time.time()
 
-        print("Generated output:", output)
+        # save results
+        with open(os.path.join(output_dir, "output.txt"), "w") as f:
+            f.write(design.to_txt())
+
+        design_image_path = os.path.join(output_dir, "output.png")
+        design_gif_path = os.path.join(output_dir, "output.gif")
+
+        design.visualize_img(filename=design_image_path)
+        design.visualize_gif(filename=design_gif_path)
+
+        print("Saved results to", output_dir)
         print("Generation time:", end_time - start_time)
 
         caption = input("Enter another prompt, or <Return> to exit: ")

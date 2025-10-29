@@ -205,6 +205,8 @@ class WoodPart:
     #     return pv.Cube(x_length=self.x_len, y_length=self.y_len, z_length=self.z_len)
 
     def get_int_euler_angles(self):
+        # I am really not confident in the correctness of the normalization here but it seems to work for 99 percent of cases
+        # Would like to double check if we're having issues with bad data
         original_euler_angles = (
             R.from_matrix(self.transform[:3, :3])
             .as_euler("xyz", degrees=True)
@@ -474,11 +476,16 @@ class WoodDesign:
     ):
         self.parts = parts
         self.design_type = design_type
+        self.text = None
 
     def to_txt(self):
+        if self.text is not None:
+            return self.text
+
         sorted_parts = self.assembly_order()
         part_texts = [part.to_text() for part in sorted_parts]
-        return "\n".join([text for text in part_texts if text != ""])
+        self.text = "\n".join([text for text in part_texts if text != ""])
+        return self.text
 
     @staticmethod
     def from_txt(
@@ -495,7 +502,10 @@ class WoodDesign:
             part = design_type.from_text(line)
             parts.append(part)
 
-        return WoodDesign(parts=parts, design_type=design_type)
+        design = WoodDesign(parts=parts, design_type=design_type)
+        design.text = txt
+
+        return design
 
     def assembly_order(self):
         # Sort wood parts by their z-coordinate (height)
@@ -508,22 +518,16 @@ class WoodDesign:
         meshes = [part.get_mesh() for part in self.parts]
         return visualize(meshes, **kwargs)
 
-    def visualize_gif(self, filename, fps=1):
+    def visualize_gif(self, filename, fps=4):
         meshes = [part.get_mesh() for part in self.parts]
         images = []
+
         for i in range(len(meshes)):
+            opacities = [1.0 if j <= i else 0.1 for j in range(len(meshes))]
             image = visualize(
                 meshes,
                 colors=["tan"] * len(meshes),
-                opacities=[
-                    1.0,
-                ]
-                * (i + 1)
-                + [
-                    0.1,
-                ]
-                * (len(meshes) - i - 1),
-                show_image=False,
+                opacities=opacities,
             )
             images.append(image)
         # Create parent directory if it doesn't exist
