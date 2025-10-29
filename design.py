@@ -119,7 +119,6 @@ def normalize_cuboid_rotation_to_positive(rot_matrix):
             return euler, combined
 
     # Fallback: if no perfect match, choose the one with most positive angles
-    print("Entering fallback")
     best_euler = None
     best_matrix = None
     best_score = -1

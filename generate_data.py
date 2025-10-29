@@ -615,8 +615,11 @@ if __name__ == "__main__":
     )
 
 
-# TODO: Write script that copies both tar files, extracts them, collects brick data and creates partnet data, merges them, and saves to csv
 # TODO: clean up this file into the right parts (and make new generate data file)
 
 # TODO: Investigate RL training with some score for the assemblability of the parts.
 # Reward could be based on proximity to other parts (overlapping bounding boxes are penalized, close but not overlapping are rewarded, far away are penalized)
+# TODO: Write a function that checks random designs from text and visualizes them
+
+
+# TODO: Get inference script working so that we can generate one block at a time
