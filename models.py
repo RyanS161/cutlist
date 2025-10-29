@@ -159,4 +159,7 @@ class Cutlist:
             top_p=self.top_p,
         )
 
+        if self.llm.tokenizer.eos_token_id in result_ids:
+            return None
+
         return self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
