@@ -138,6 +138,15 @@ class Cutlist:
             # If we successfully parsed a part, we can add it to the design
             design.add_part(part)
 
+            # Update prompt with the new part
+
+            new_messages = messages + [
+                {"role": "assistant", "content": design.to_txt()},
+            ]
+            prompt = self.llm.tokenizer.apply_chat_template(
+                new_messages, continue_final_message=True, return_tensors="pt"
+            )
+
         return design
 
     def generate_part(self, prompt: str):
