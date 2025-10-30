@@ -24,8 +24,8 @@ def main():
 
         seed = input("Enter a generation seed (default=42): ")
         seed = int(seed) if seed else 42
-        output_dir = input("Enter a directory to save the output (default=./output): ")
-        output_dir = output_dir if output_dir else "./output/"
+        output_dir = input("Enter a directory to save the output (default=./designs): ")
+        output_dir = output_dir if output_dir else "./designs/"
         os.makedirs(os.path.dirname(output_dir), exist_ok=True)
         transformers.set_seed(seed)
 
@@ -36,11 +36,11 @@ def main():
         end_time = time.time()
 
         # save results
-        with open(os.path.join(output_dir, "output.txt"), "w") as f:
+        with open(os.path.join(output_dir, "design.txt"), "w") as f:
             f.write(design.to_txt())
 
-        design_image_path = os.path.join(output_dir, "output.png")
-        design_gif_path = os.path.join(output_dir, "output.gif")
+        design_image_path = os.path.join(output_dir, "design.png")
+        design_gif_path = os.path.join(output_dir, "design.gif")
 
         design.visualize_img(filename=design_image_path, text=caption)
         design.visualize_gif(filename=design_gif_path)

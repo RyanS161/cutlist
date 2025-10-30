@@ -131,6 +131,7 @@ class Cutlist:
             try:
                 part = ArbitraryCuboid.from_text(part_txt)
             except Exception as e:
+                # Let's make some other heuristics here to check
                 print("Error parsing part:", e)
                 self.llm.rollback_to_saved_state()
                 continue
