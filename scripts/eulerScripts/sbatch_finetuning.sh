@@ -8,6 +8,7 @@
 #SBATCH --tmp=32G
 
 
+cp -r $SCRATCH/data/finetuning_data ~
 
 cd ~/cutlist
 source ./scripts/eulerScripts/setup_euler_python.sh

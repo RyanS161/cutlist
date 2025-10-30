@@ -18,6 +18,13 @@ from joblib import Parallel, delayed
 import json
 from sklearn.model_selection import train_test_split
 
+# Configuration values
+BOUNDS_DIM_X = 400
+BOUNDS_DIM_Y = 400
+BOUNDS_DIM_Z = 500
+
+BOUNDS_CENTER_X = BOUNDS_DIM_X / 2
+BOUNDS_CENTER_Y = BOUNDS_DIM_Y / 2
 
 ### Functions for fitting primitives to meshes
 
@@ -141,7 +148,7 @@ def voxelized_iou_score(original_mesh, fitted_mesh, voxel_size=1):
 
     # visualize point clouds:
     # print(score)
-    # visualize([original_voxels, fitted_voxels], colors=["red", "blue"], opacities=[0.8, 0.8], axis_length=25, off_screen=False)
+    # visualize([original_voxels, fitted_voxels], colors=["red", "blue"], opacities=[0.8, 0.8], axis_length=25, show_image=True)
 
     return score
 
@@ -353,22 +360,24 @@ def search_over_scales(
     best_scale = None
     for scale in tqdm(scales):
         scaled_sample = copy.deepcopy(sample)
-        scaled_sample["meshes"] = {k: mesh.scale(scale) for k, mesh in meshes.items()}
+        scaled_sample["meshes"] = {
+            k: mesh.scale(scale, point=(BOUNDS_CENTER_X, BOUNDS_CENTER_Y, 0))
+            for k, mesh in meshes.items()
+        }
         result_meshes, result_score = search_over_part_hierarchy(
             scaled_sample, strategy, scale=scale, use_hierarchy=use_hierarchy
         )
 
-        pc = pv.PolyData(
-            np.vstack([mesh.points[::10] for mesh in scaled_sample["meshes"].values()])
-        )
-        visualize(
-            [pc] + result_meshes,
-            colors=["red"] + ["tan"] * len(result_meshes),
-            filename=f"{filename}_score{result_score * 100:.0f}_scale{scale * 10:.0f}.png",
-            axis_length=100,
-            off_screen=True,
-            text=f"Scale: {scale: .4f}, Score: {result_score:.4f}",
-        )
+        # pc = pv.PolyData(
+        #     np.vstack([mesh.points[::10] for mesh in scaled_sample["meshes"].values()])
+        # )
+        # visualize(
+        #     [pc] + result_meshes,
+        #     colors=["red"] + ["tan"] * len(result_meshes),
+        #     filename=f"{filename}_score{result_score * 100:.0f}_scale{scale * 10:.0f}.png",
+        #     axis_length=100,
+        #     text=f"Scale: {scale: .4f}, Score: {result_score:.4f}",
+        # )
         if result_score < best_scale_score:
             best_scale_score = result_score
             best_scale_meshes = result_meshes
@@ -399,7 +408,9 @@ def generate_design_data(partnet_dir, brickgpt_dir, output=None, n_jobs=-1):
     def process_single_model(model, partnet_dir, valid_object_ids):
         """Process a single model and return its design text if valid."""
         model_dir = os.path.join(partnet_dir, model)
-        sample = get_partnet_sample(model_dir, max_parts=100)
+        sample = get_partnet_sample(
+            model_dir, max_parts=100, desired_xy=(BOUNDS_CENTER_X, BOUNDS_CENTER_Y)
+        )
 
         if sample is None:
             return None
@@ -450,7 +461,9 @@ def create_instruction(caption):
     instruction = (
         "Create a wooden model of the input. Format your response as a list of wooden pieces: "
         "<dimensions> <position> <rotation>, where piece position is x y z and piece rotation is rx ry rz. "
-        "All values are space separated, and pieces are separated with a newline\n\n"
+        "All values are space separated, and pieces are separated with a newline."
+        "No negative values are allowed. Rotations are in degrees from 0 to 179."
+        "\n\n"
         "### Input:\n"
         f"{caption}"
     )
@@ -463,8 +476,13 @@ def generate_finetuning_data(data_df, output_dir=None):
     finetuning_entries = []
     for index, row in data_df.iterrows():
         design_txt = row["design_txt"]
-        # parse the captions as an array of strings
-        captions = row["captions"].strip("[]").split("'\n '")
+
+        if isinstance(row["captions"], str):
+            # parse the captions as an array of strings
+            captions = row["captions"].strip("[]").split("'\n '")
+        else:
+            captions = row["captions"]
+
         for caption in captions:
             caption = caption.strip().strip("'").strip()
             messages = [
@@ -485,6 +503,7 @@ def generate_finetuning_data(data_df, output_dir=None):
         ["train", "test"], [train_entries, test_entries]
     ):
         if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
             split_output_path = os.path.join(output_dir, f"{split_name}.jsonl")
             with open(split_output_path, "w") as f:
                 for entry in split_entries:
@@ -500,13 +519,14 @@ def local_test():
     # Need to investigate how to integrate the part hierarchy as well
     for num in desired_models:
         sample = get_partnet_sample(
-            f"/Users/ryanslocum/Documents/current_courses/semesterProject/cutlist/scratch/{num}"
+            f"/Users/ryanslocum/Documents/current_courses/semesterProject/cutlist/scratch/{num}",
+            desired_xy=(BOUNDS_CENTER_X, BOUNDS_CENTER_Y),
         )
         original_meshes = sample["meshes"]
         original_point_cloud = pv.PolyData(
             np.vstack([mesh.points[::10] for mesh in original_meshes.values()])
         )
-        off_screen = True
+        show_image = False
 
         arbitrary_design = arbitrary_cuboids_strategy(original_meshes.values())
         arbitrary_design_text = arbitrary_design.to_txt()
@@ -517,8 +537,9 @@ def local_test():
             [original_point_cloud] + arbitrary_meshes,
             colors=["red"] + ["tan"] * len(arbitrary_meshes),
             filename=f"designs/arbitrary_fitted_meshes_{num}.png",
+            show_image=show_image,
             axis_length=25,
-            off_screen=off_screen,
+            bounds=(0, BOUNDS_DIM_X, 0, BOUNDS_DIM_Y, 0, BOUNDS_DIM_Z),
         )
 
         search_scales = np.linspace(1.0, 5.0, 25)
@@ -534,8 +555,9 @@ def local_test():
             [original_point_cloud] + length_meshes,
             colors=["red"] + ["tan"] * len(length_meshes),
             filename=f"designs/length_fitted_meshes_{num}.png",
+            show_image=show_image,
             axis_length=25,
-            off_screen=off_screen,
+            bounds=(0, BOUNDS_DIM_X, 0, BOUNDS_DIM_Y, 0, BOUNDS_DIM_Z),
         )
 
         our_meshes, best_scale = search_over_scales(
@@ -549,14 +571,33 @@ def local_test():
             [original_point_cloud] + our_meshes,
             colors=["red"] + ["tan"] * len(our_meshes),
             filename=f"designs/our_fitted_meshes_{num}.png",
+            show_image=show_image,
             axis_length=25,
-            off_screen=off_screen,
+            bounds=(0, BOUNDS_DIM_X, 0, BOUNDS_DIM_Y, 0, BOUNDS_DIM_Z),
+        )
+
+
+# Get a random model from the finetuning data and visualize it
+def visualize_random_finetuning_model(finetuning_data_path):
+    with open(finetuning_data_path, "r") as f:
+        lines = f.readlines()
+        random_line = np.random.choice(lines)
+        entry = json.loads(random_line)
+        messages = entry["messages"]
+        design_txt = messages[-1]["content"]
+        design = WoodDesign.from_txt(design_txt, ArbitraryCuboid)
+        meshes = [part.get_mesh() for part in design.parts]
+        visualize(
+            meshes,
+            colors=["tan"] * len(meshes),
+            filename="./random_finetuning_model.png",
+            show_image=True,
         )
 
 
 if __name__ == "__main__":
-    local_test()
-    exit()
+    # local_test()
+    # exit()
 
     # Process args for input directory name:
     parser = argparse.ArgumentParser(
@@ -585,18 +626,21 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    generate_design_data(args.partnet_dir, args.brickgpt_dir, args.output, args.n_jobs)
-
-    data_df = pd.read_csv(
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/output.csv"
+    intermediate_csv = os.path.join(args.output, "intermediate.csv")
+    data_df = generate_design_data(
+        args.partnet_dir, args.brickgpt_dir, intermediate_csv, args.n_jobs
     )
 
+    finetuning_output_dir = os.path.join(args.output, "finetuning_data")
     generate_finetuning_data(
         data_df,
-        output_dir="/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data",
+        output_dir=finetuning_output_dir,
     )
 
 
-# TODO: Write script that copies both tar files, extracts them, collects brick data and creates partnet data, merges them, and saves to csv
 # TODO: clean up this file into the right parts (and make new generate data file)
-# TODO: Figure out how to put this our data into the training pipeline for the fine-tuning library
+
+# TODO: Investigate RL training with some score for the assemblability of the parts.
+# Reward could be based on proximity to other parts (overlapping bounding boxes are penalized, close but not overlapping are rewarded, far away are penalized)
+
+# TODO: Get inference script working so that we can generate one block at a time

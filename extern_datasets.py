@@ -1,4 +1,3 @@
-import binvox_rw
 import numpy as np
 import pyvista as pv
 import pandas as pd
@@ -49,7 +48,7 @@ def collect_shapenet_data(dir="/Users/ryanslocum/Downloads/cutlist/ShapeNetCore"
     return shapenet_df
 
 
-def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False):
+def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False, desired_xy=(0, 0)):
     # Rotate mesh to stand upright
     mesh = mesh.rotate_x(90)
     # Center mesh at origin
@@ -59,64 +58,17 @@ def zero_shapenet_obj(mesh, target_size=100, return_transfrom=False):
     scale = target_size / max(mesh_width, mesh_depth)
     mesh = mesh.scale([scale, scale, scale])
     z_height = mesh.bounds[5] - mesh.bounds[4]
-    translation = np.array((0, 0, z_height / 2)) - np.array(mesh.center)
+    translation = (
+        np.array((0, 0, z_height / 2))
+        - np.array(mesh.center)
+        + np.array((desired_xy[0], desired_xy[1], 0))
+    )
     mesh = mesh.translate(translation)
 
     if return_transfrom:
         return mesh, translation, scale
     else:
         return mesh
-
-
-def get_shapenet_samples():
-    samples = []
-
-    SHAPENET_PARENT_DIR = "/Users/ryanslocum/Downloads/cutlist/ShapeNetCore"
-    df = pd.read_csv(
-        os.path.join(SHAPENET_PARENT_DIR, "shapenet_models_with_captions.csv"),
-        dtype={"category_id": str},
-    )
-    # choose 5 random samples from each category
-    sample_df = (
-        df.groupby("category")
-        .apply(lambda x: x.sample(5, random_state=100))
-        .reset_index(drop=True)
-    )
-    for _, row in sample_df.iterrows():
-        category = row["category"]
-        category_id = row["category_id"]
-        object_id = row["object_id"]
-        obj_file = os.path.join(
-            SHAPENET_PARENT_DIR,
-            category_id,
-            str(object_id),
-            "models",
-            "model_normalized.obj",
-        )
-        if os.path.isfile(obj_file):
-            mesh = zero_shapenet_obj(pv.read(obj_file))
-            point_cloud = None
-
-            with open(obj_file.replace(".obj", ".surface.binvox"), "rb") as f:
-                voxelized_model = binvox_rw.read_as_3d_array(f)
-                voxel_data = voxelized_model.data
-                # make point cloud from voxel data
-                points = np.argwhere(voxel_data)
-                point_cloud = pv.PolyData(points[::10])
-                point_cloud = zero_shapenet_obj(point_cloud)
-
-            sample = {
-                "file": obj_file,
-                "transformed_mesh": mesh,
-                "point_cloud": point_cloud,
-                "category": category,
-                "object_id": object_id,
-            }
-            samples.append(sample)
-        else:
-            print(f"OBJ file not found: {obj_file}")
-
-    return samples
 
 
 """PartNet Helpers:"""
@@ -159,9 +111,11 @@ def tree_from_json(json_file):
     return tree
 
 
-def get_partnet_sample(dir, max_parts=None):
+def get_partnet_sample(dir, max_parts=None, desired_xy=(0, 0)):
     sample = {}
-    sample["meshes"] = get_and_transform_partnet_meshes(dir, max_parts=max_parts)
+    sample["meshes"] = get_and_transform_partnet_meshes(
+        dir, max_parts=max_parts, desired_xy=desired_xy
+    )
     if sample["meshes"] is None:
         return None
     sample["num_parts"] = len(sample["meshes"])
@@ -173,7 +127,7 @@ def get_partnet_sample(dir, max_parts=None):
     return sample
 
 
-def get_and_transform_partnet_meshes(dir, max_parts=None):
+def get_and_transform_partnet_meshes(dir, max_parts=None, desired_xy=(0, 0)):
     original_meshes = {}
     combined_mesh = pv.PolyData()
 
@@ -188,7 +142,9 @@ def get_and_transform_partnet_meshes(dir, max_parts=None):
         original_meshes[mesh_id] = mesh
         combined_mesh = combined_mesh.merge(mesh)
 
-    _, translation, scale = zero_shapenet_obj(combined_mesh, return_transfrom=True)
+    _, translation, scale = zero_shapenet_obj(
+        combined_mesh, return_transfrom=True, desired_xy=desired_xy
+    )
 
     transformed_meshes = {}
     for mesh_id, mesh in original_meshes.items():
