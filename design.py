@@ -257,7 +257,6 @@ class ArbitraryCuboid(WoodPart):
         # The brickgpt paper uses 1x2(2,3,1) or something like that.
         # I could do dims as LxWxH(centroid_x,centroid_y,centroid_z)(rot_x,rot_y,rot_z)
         # But I'm not sure what that would accomplish necessarily.
-        # TODO: Also need to figure out how to handle negative or possibly mirrored rotations.
 
         return " ".join([str(prop) for prop in properties])
 

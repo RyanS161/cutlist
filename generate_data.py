@@ -640,7 +640,4 @@ if __name__ == "__main__":
 
 # TODO: clean up this file into the right parts (and make new generate data file)
 
-# TODO: Investigate RL training with some score for the assemblability of the parts.
-# Reward could be based on proximity to other parts (overlapping bounding boxes are penalized, close but not overlapping are rewarded, far away are penalized)
-
-# TODO: Get inference script working so that we can generate one block at a time
+# TODO: Incorporate text from part-level annotations to help guide part generation??

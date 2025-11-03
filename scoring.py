@@ -1,4 +1,5 @@
 from .design import ArbitraryCuboid
+from .generate_data import BOUNDS_DIM_X, BOUNDS_DIM_Y
 from scipy.spatial import HalfspaceIntersection, ConvexHull
 from scipy.optimize import linprog
 import numpy as np
@@ -144,10 +145,39 @@ def obb_distance(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid, eps=1e-12):
 
 def assemblability_score(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> float:
     """Compute an assemblability score based on OBB distance."""
+    # Positive score means separated, negative means overlapping. 0 means touching.
+    TANH_SCALING_FACTOR = 1e-2
     distance = obb_distance(cube1, cube2)
     if distance == 0:
         iou = cube_iou(cube1, cube2)
-        score = iou
+        score = -iou
     else:
-        score = -np.tanh(distance)
+        score = np.tanh(distance * TANH_SCALING_FACTOR)
     return score
+
+
+def score_new_part(new_part, design) -> float:
+    """Compute the minimum assemblability score of new_part with all existing parts."""
+    # TODO: Need to program in bounds from the design later
+    FLOOR_DEPTH = 1
+    floor_transform = np.eye(4)
+    floor_transform[:, 3] = np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, -FLOOR_DEPTH]) / 2.0
+    FLOOR_PART = ArbitraryCuboid(
+        dims=[BOUNDS_DIM_Y, 1000, FLOOR_DEPTH], transform=floor_transform
+    )
+    scores = np.zeros(len(design.parts) + 1)
+    scores[-1] = assemblability_score(new_part, FLOOR_PART)
+    for i, existing_part in enumerate(design.parts):
+        scores[i] = assemblability_score(new_part, existing_part)
+
+    # If there is a negative score (overlap), return the minimum (most negative) score
+    # Else, return the minimum positive score (closest to zero)
+    # Also get the scored part
+    scored_idx = np.argmin(scores)
+    score = scores[scored_idx]
+
+    if scored_idx == len(design.parts):
+        # Scored against floor
+        return score, None
+
+    return score, scored_idx
