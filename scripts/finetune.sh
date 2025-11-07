@@ -5,6 +5,9 @@ OUTPUT_DIR="${2}"
 RUN_NAME="${3}"
 DATASET_NAME="${4}"
 
+export WANDB_ENTITY=ryanslocum-eth-zurich
+export WANDB_PROJECT=cutlist_sft
+
 args=(
     --model_name_or_path "${PRETRAINED_DIR}"
     --do_train
