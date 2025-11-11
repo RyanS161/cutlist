@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=14:00:00
+#SBATCH --time=20:00:00
 #SBATCH -c 4
 #SBATCH --mem-per-cpu=16G
 #SBATCH --gpus=rtx_4090:1
@@ -8,7 +8,7 @@
 #SBATCH --tmp=128G
 
 
-MODEL_NAME="Llama-3.2-3B-Instruct"
+MODEL_NAME="Llama-3.2-1B-Instruct"
 
 
 echo "Copying model and extracting model from scratch -- $(date)"
