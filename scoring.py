@@ -1,5 +1,5 @@
-from .design import ArbitraryCuboid
-from .generate_data import BOUNDS_DIM_X, BOUNDS_DIM_Y
+from design import ArbitraryCuboid
+from generate_data import BOUNDS_DIM_X, BOUNDS_DIM_Y
 from scipy.spatial import HalfspaceIntersection, ConvexHull
 from scipy.optimize import linprog
 import numpy as np
@@ -156,12 +156,12 @@ def assemblability_score(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> floa
     return score
 
 
-def score_new_part(new_part, design) -> float:
+def score_new_part(design, new_part) -> float:
     """Compute the minimum assemblability score of new_part with all existing parts."""
     # TODO: Need to program in bounds from the design later
     FLOOR_DEPTH = 1
     floor_transform = np.eye(4)
-    floor_transform[:, 3] = np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, -FLOOR_DEPTH]) / 2.0
+    floor_transform[:3, 3] = np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, -FLOOR_DEPTH]) / 2.0
     FLOOR_PART = ArbitraryCuboid(
         dims=[BOUNDS_DIM_Y, 1000, FLOOR_DEPTH], transform=floor_transform
     )
