@@ -21,8 +21,3 @@ tar -xf $TMPDIR/$BASE_MODEL.tar -C $TMPDIR/
 
 cd ~/cutlist
 source scripts/eulerScripts/setup_euler_python.sh
-
-
-uv run infer.py \
-	--model_name $TMPDIR/finetuned \
-	--input_prompts ~/input_prompts.csv

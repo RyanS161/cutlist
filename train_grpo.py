@@ -7,23 +7,49 @@ import json
 
 from scoring import score_new_part
 from design import WoodDesign, ArbitraryCuboid
+import argparse
 
 os.environ["WANDB_ENTITY"] = "ryanslocum-eth-zurich"
 os.environ["WANDB_PROJECT"] = "cutlist_rlft"
 
-FINETUNING_DATA_DIR = (
-    "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data"
+
+parser = argparse.ArgumentParser(
+    description="Train GRPO for cutlist. Provide paths for data, model, adapter, and output."
 )
-RL_DATA_DIR = (
-    "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_tuning_data"
+parser.add_argument(
+    "--finetuning-data-dir",
+    default="~/finetuning_data",
+    help="Path to the original fine-tuning dataset (HF dataset or dataset dir).",
 )
-BASE_MODEL_PATH = (
-    "/Users/ryanslocum/Documents/current_courses/semesterProject/Llama-3.2-1B-Instruct"
+parser.add_argument(
+    "--rl-data-dir",
+    default="~/rl_tuning_data",
+    help="Directory to write/read expanded RL dataset (JSONL per split).",
 )
-ADAPTER_PATH = "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuned"
-MODEL_OUTPUT_DIR = (
-    "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_grpo_cutlist"
+parser.add_argument(
+    "--base-model-path",
+    default="~/Llama-3.2-1B-Instruct",
+    help="Path or model id of the base causal LM.",
 )
+parser.add_argument(
+    "--adapter-path",
+    default="~/finetuned",
+    help="Path to the PEFT/LoRA adapter weights.",
+)
+parser.add_argument(
+    "--model-output-dir",
+    default="~/rl_grpo_cutlist",
+    help="Directory where the trained GRPO model and artifacts will be saved.",
+)
+
+args = parser.parse_args()
+
+# Expand tildes and convert to absolute paths
+FINETUNING_DATA_DIR = os.path.abspath(os.path.expanduser(args.finetuning_data_dir))
+RL_DATA_DIR = os.path.abspath(os.path.expanduser(args.rl_data_dir))
+BASE_MODEL_PATH = os.path.abspath(os.path.expanduser(args.base_model_path))
+ADAPTER_PATH = os.path.abspath(os.path.expanduser(args.adapter_path))
+MODEL_OUTPUT_DIR = os.path.abspath(os.path.expanduser(args.model_output_dir))
 
 
 # Replace inline expansion logic with reusable functions
@@ -105,7 +131,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
 # Configuration: original dataset source and where to save expanded datasets
 
 # Expand both train and test and save expanded versions; get expanded train for training
-# expand_and_save(FINETUNING_DATA_DIR, splits=("train", "test"), output_dir=RL_DATA_DIR)
+expand_and_save(FINETUNING_DATA_DIR, splits=("train", "test"), output_dir=RL_DATA_DIR)
 
 dataset = load_dataset(RL_DATA_DIR, split="train")
 
