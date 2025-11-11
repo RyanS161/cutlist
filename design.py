@@ -266,6 +266,10 @@ class ArbitraryCuboid(WoodPart):
         if len(parts) != 9:
             # Invalid text format for ArbitraryCuboid.
             return None
+
+        if not np.all([part.isdigit() for part in parts]):
+            return None
+
         dims = np.array([float(parts[0]), float(parts[1]), float(parts[2])])
         centroid = np.array([float(parts[3]), float(parts[4]), float(parts[5])])
         euler_angles = np.array([float(parts[6]), float(parts[7]), float(parts[8])])
