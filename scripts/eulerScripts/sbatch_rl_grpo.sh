@@ -7,9 +7,15 @@
 #SBATCH --output=_jobs/rl_grpo%j.out
 #SBATCH --tmp=128G
 
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <model_dir in model_output (e.g. 48059951/checkpoint-22000)>"
+  exit 1
+fi
+
+FINETUNED_MODEL="$1"
 
 
-source ~/cutlist/scripts/setup_finetuned_model.sh 48235807
+source ~/cutlist/scripts/setup_finetuned_model.sh "$FINETUNED_MODEL"
 
 uv run train_grpo.py \
     --finetuning-data-dir ~/finetuning_data \
