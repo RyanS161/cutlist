@@ -133,7 +133,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
 # Expand both train and test and save expanded versions; get expanded train for training
 expand_and_save(FINETUNING_DATA_DIR, splits=("train", "test"), output_dir=RL_DATA_DIR)
 
-dataset = load_dataset(RL_DATA_DIR, split="train")
+dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
 
 # Dummy reward function for demonstration purposes
@@ -141,18 +141,15 @@ def reward_function(completions, prompts, **kwargs):
     scores = []
     for completion in completions:
         design_text = completion[0]["content"]
-        try:
-            design = WoodDesign.from_txt(design_text, design_type=ArbitraryCuboid)
-        except Exception as e:
-            print(f"Error processing design: {e}")
+        design = WoodDesign.from_txt(design_text, design_type=ArbitraryCuboid)
+        if design is None:
             print("Design text was:", repr(design_text))
-            score = -1.0
-            design = None
+            scores.append(-10.0)
+            continue
 
-        if design:
-            recent_part = design.parts.pop()  # get the most recently added part
-            raw_score, idx = score_new_part(design, recent_part)
-            score = -1.0 * abs(raw_score)
+        recent_part = design.parts.pop()  # get the most recently added part
+        raw_score, idx = score_new_part(design, recent_part)
+        score = -1.0 * abs(raw_score)
 
         print("Score for new part:", score)
         scores.append(score)

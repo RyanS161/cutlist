@@ -264,7 +264,8 @@ class ArbitraryCuboid(WoodPart):
     def from_text(text: str):
         parts = text.strip().split()
         if len(parts) != 9:
-            raise ValueError("Invalid text format for ArbitraryCuboid.")
+            # Invalid text format for ArbitraryCuboid.
+            return None
         dims = np.array([float(parts[0]), float(parts[1]), float(parts[2])])
         centroid = np.array([float(parts[3]), float(parts[4]), float(parts[5])])
         euler_angles = np.array([float(parts[6]), float(parts[7]), float(parts[8])])
@@ -503,6 +504,8 @@ class WoodDesign:
         parts = []
         for line in txt_lines:
             part = design_type.from_text(line)
+            if part is None:
+                return None
             parts.append(part)
 
         design = WoodDesign(parts=parts, design_type=design_type)
