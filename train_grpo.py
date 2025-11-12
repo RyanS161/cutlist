@@ -1,12 +1,12 @@
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 from peft import PeftModel
 import os
 import json
 
-from scoring import score_new_part
-from design import WoodDesign, ArbitraryCuboid
+from scoring import reward_for_new_part
+from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
 
 os.environ["WANDB_ENTITY"] = "ryanslocum-eth-zurich"
@@ -138,26 +138,42 @@ dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
 # Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
-    scores = []
+    rewards = []
+
+    # original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
+    # original_design = WoodDesign.from_txt(original_design_text, design_type=ArbitraryCuboid)
+
     for completion in completions:
         design_text = completion[0]["content"]
         design = WoodDesign.from_txt(design_text, design_type=ArbitraryCuboid)
         if design is None:
             print("Design text was:", repr(design_text))
-            scores.append(-10.0)
+            rewards.append(0.0)
             continue
 
         recent_part = design.parts.pop()  # get the most recently added part
-        raw_score, idx = score_new_part(design, recent_part)
-        score = -1.0 * abs(raw_score)
+        reward, idx = reward_for_new_part(design, recent_part)
 
-        print("Score for new part:", score)
-        scores.append(score)
+        meshes = [design_part.get_mesh() for design_part in design.parts]
+        if idx is not None:
+            colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
+        else:
+            colors = ["tan"] * len(meshes)
+        _ = visualize(
+            meshes + [recent_part.get_mesh()],
+            colors=colors + ["blue"],
+            opacities=[0.5] * (len(meshes) + 1),
+            show_image=True,
+            text=f"Reward {reward:.4f}",
+        )
 
-    return scores
+        print("Reward for new part:", reward)
+        rewards.append(reward)
+
+    return rewards
 
 
-tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
+# tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
 base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, device_map=None)
 # attach LoRA adapter weights
 model = PeftModel.from_pretrained(base_model, ADAPTER_PATH)

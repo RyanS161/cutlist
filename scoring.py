@@ -156,7 +156,7 @@ def assemblability_score(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> floa
     return score
 
 
-def score_new_part(design, new_part) -> float:
+def reward_for_new_part(design, new_part) -> float:
     """Compute the minimum assemblability score of new_part with all existing parts."""
     # TODO: Need to program in bounds from the design later
     FLOOR_DEPTH = 1
@@ -176,8 +176,15 @@ def score_new_part(design, new_part) -> float:
     scored_idx = np.argmin(scores)
     score = scores[scored_idx]
 
+    # TODO: Make sure that this makes sense
+    # Trying to give maximum penalty in the case where there is overlap
+    if score < 0:
+        score = -1.0
+
+    reward = 1 - abs(score)
+
     if scored_idx == len(design.parts):
         # Scored against floor
-        return score, None
+        return reward, None
 
-    return score, scored_idx
+    return reward, scored_idx
