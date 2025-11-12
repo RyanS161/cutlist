@@ -1,10 +1,12 @@
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
 from transformers import AutoModelForCausalLM
-from peft import PeftModel
+from peft import PeftModel, LoraConfig, TaskType, get_peft_model
 import os
 import json
+import numpy as np
 
+from models import get_device
 from scoring import reward_for_new_part
 from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
@@ -175,13 +177,44 @@ def reward_function(completions, prompts, **kwargs):
             print("Reward for new part:", reward)
         rewards.append(reward)
 
+    arr = np.array(rewards, dtype=float)
+    print(
+        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
+    )
+
     return rewards
 
 
 # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
 base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, device_map=None)
-# attach LoRA adapter weights
-model = PeftModel.from_pretrained(base_model, ADAPTER_PATH)
+finetuned_model = PeftModel.from_pretrained(
+    base_model, ADAPTER_PATH
+)  # attach LoRA adapter weights
+
+
+# This part is a bit sketchy but I think it makes more sense to add a new adapter on top
+
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj"],  # adapt to your model architecture
+    lora_dropout=0.05,
+    bias="none",
+    task_type=TaskType.CAUSAL_LM,
+)
+
+model = get_peft_model(finetuned_model, lora_config)
+
+device = get_device()
+model.to(device)
+total_params = sum(p.numel() for p in model.parameters())
+trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print(
+    f"MODEL DEVICE={device} TOTAL_PARAMS={total_params:,} TRAINABLE_PARAMS={trainable_params:,}"
+)
+for name, p in model.named_parameters():
+    if p.requires_grad:
+        print("TRAINABLE:", name, tuple(p.shape))
 
 training_args = GRPOConfig(output_dir=MODEL_OUTPUT_DIR, max_completion_length=18)
 trainer = GRPOTrainer(
