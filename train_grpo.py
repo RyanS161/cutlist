@@ -138,36 +138,41 @@ dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
 # Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
+    VISUALIZE = False
     rewards = []
 
-    # original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
-    # original_design = WoodDesign.from_txt(original_design_text, design_type=ArbitraryCuboid)
+    original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
+    original_design = WoodDesign.from_txt(
+        original_design_text, design_type=ArbitraryCuboid
+    )
+    if original_design is None:
+        print("Design could not be processed, text was:", repr(original_design_text))
+        return [0.0] * len(completions)
 
     for completion in completions:
-        design_text = completion[0]["content"]
-        design = WoodDesign.from_txt(design_text, design_type=ArbitraryCuboid)
-        if design is None:
-            print("Design text was:", repr(design_text))
+        # design_text = completion[0]["content"]
+        new_part_text = completion[0]["content"].splitlines()[-1]
+        new_part = ArbitraryCuboid.from_text(new_part_text)
+        if new_part is None:
+            print("New part text was:", repr(new_part_text))
             rewards.append(0.0)
             continue
 
-        recent_part = design.parts.pop()  # get the most recently added part
-        reward, idx = reward_for_new_part(design, recent_part)
-
-        meshes = [design_part.get_mesh() for design_part in design.parts]
-        if idx is not None:
-            colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
-        else:
-            colors = ["tan"] * len(meshes)
-        _ = visualize(
-            meshes + [recent_part.get_mesh()],
-            colors=colors + ["blue"],
-            opacities=[0.5] * (len(meshes) + 1),
-            show_image=True,
-            text=f"Reward {reward:.4f}",
-        )
-
-        print("Reward for new part:", reward)
+        reward, idx = reward_for_new_part(original_design, new_part)
+        if VISUALIZE:
+            meshes = [design_part.get_mesh() for design_part in original_design.parts]
+            if idx is not None:
+                colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
+            else:
+                colors = ["tan"] * len(meshes)
+            _ = visualize(
+                meshes + [new_part.get_mesh()],
+                colors=colors + ["blue"],
+                opacities=[0.5] * (len(meshes) + 1),
+                show_image=True,
+                text=f"Reward {reward:.4f}",
+            )
+            print("Reward for new part:", reward)
         rewards.append(reward)
 
     return rewards
