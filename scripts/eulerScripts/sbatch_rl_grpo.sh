@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=20:00:00
+#SBATCH --time=5:00:00
 #SBATCH -c 4
 #SBATCH --mem-per-cpu=16G
 #SBATCH --gpus=rtx_4090:1
@@ -8,7 +8,7 @@
 #SBATCH --tmp=128G
 
 if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <job_name> <model_dir in model_output (e.g. 48059951/checkpoint-22000)>" 
+  echo "Usage: $0 <job_name> <model_dir in scratch (e.g. rl_grpo/runname/checkpoint-100)>" 
   exit 1
 fi
 
