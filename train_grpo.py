@@ -188,10 +188,12 @@ def reward_function(completions, prompts, **kwargs):
 
 # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
 base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, device_map=None)
-finetuned_model = PeftModel.from_pretrained(
+finetuned_with_adapter = PeftModel.from_pretrained(
     base_model, ADAPTER_PATH
 )  # attach LoRA adapter weights
 
+finetuned_model = finetuned_with_adapter.merge_and_unload()
+finetuned_model.save_pretrained(os.path.join(MODEL_OUTPUT_DIR, "base_model"))
 
 # This part is a bit sketchy but I think it makes more sense to add a new adapter on top
 
@@ -226,3 +228,5 @@ trainer = GRPOTrainer(
     train_dataset=dataset,
 )
 trainer.train()
+
+model.save_pretrained(MODEL_OUTPUT_DIR)
