@@ -129,11 +129,9 @@ class Cutlist:
             if not part_txt:
                 print("End of design generation.")
                 break
-            try:
-                part = ArbitraryCuboid.from_text(part_txt)
-            except Exception as e:
-                # Let's make some other heuristics here to check
-                print("Error parsing part:", e)
+            part = ArbitraryCuboid.from_text(part_txt)
+            if part is None:
+                print("Error parsing part:", part_txt)
                 self.llm.rollback_to_saved_state()
                 continue
 

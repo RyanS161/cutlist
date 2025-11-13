@@ -18,7 +18,7 @@ grep -rIl -E '/scratch/tmp\.[0-9]+\.rslocum' $TMPDIR/finetuned | while read -r f
   sed -i -E "s|/scratch/tmp\.[0-9]+\.rslocum|${TMPDIR}|g" "$file"
 done
 
-if [[ -z "$RL_FINETUNED_MODEL" ]]; then
+if [[ -n "$RL_FINETUNED_MODEL" ]]; then
   rsync -a --exclude 'checkpoint*/' "$SCRATCH/rl_grpo_cutlist/$RL_FINETUNED_MODEL/" "$TMPDIR/rl_finetuned/"
 
   grep -rIl -E '/scratch/tmp\.[0-9]+\.rslocum' $TMPDIR/rl_finetuned | while read -r file; do

@@ -107,6 +107,7 @@ if __name__ == "__main__":
 
     model.llm.tokenizer = base_tokenizer
     model.llm.model = llm_model
+    model.llm.model.to(model.llm.device)
 
     if args.input_prompts:
         automatic_inference(model, args.input_prompts)
