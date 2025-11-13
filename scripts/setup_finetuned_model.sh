@@ -6,6 +6,9 @@ fi
 FINETUNED_MODEL="$1"
 RL_FINETUNED_MODEL="${2:-}"
 
+echo "Setting up finetuned model: $FINETUNED_MODEL"
+echo "Setting up RL finetuned model: ${RL_FINETUNED_MODEL:-None}"
+
 BASE_MODEL=$(grep -oP '/scratch/tmp\.[0-9]+\.rslocum/\K[a-zA-Z0-9._-]+' $SCRATCH/model_output/$FINETUNED_MODEL/adapter_config.json)
 
 rsync -a --exclude 'checkpoint*/' "$SCRATCH/model_output/$FINETUNED_MODEL/" "$TMPDIR/finetuned/"
@@ -16,7 +19,7 @@ grep -rIl -E '/scratch/tmp\.[0-9]+\.rslocum' $TMPDIR/finetuned | while read -r f
 done
 
 if [[ -z "$RL_FINETUNED_MODEL" ]]; then
-  rsync -a --exclude 'checkpoint*/' "$SCRATCH/rl_grpo_cutlist/$FINETUNED_MODEL/" "$TMPDIR/rl_finetuned/"
+  rsync -a --exclude 'checkpoint*/' "$SCRATCH/rl_grpo_cutlist/$RL_FINETUNED_MODEL/" "$TMPDIR/rl_finetuned/"
 
   grep -rIl -E '/scratch/tmp\.[0-9]+\.rslocum' $TMPDIR/rl_finetuned | while read -r file; do
     sed -i -E "s|/scratch/tmp\.[0-9]+\.rslocum|${TMPDIR}|g" "$file"
