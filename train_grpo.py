@@ -44,6 +44,7 @@ parser.add_argument(
     help="Directory where the trained GRPO model and artifacts will be saved.",
 )
 
+
 args = parser.parse_args()
 
 # Expand tildes and convert to absolute paths
@@ -207,6 +208,7 @@ model = get_peft_model(finetuned_model, lora_config)
 
 device = get_device()
 model.to(device)
+
 total_params = sum(p.numel() for p in model.parameters())
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(

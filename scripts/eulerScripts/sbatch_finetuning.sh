@@ -8,6 +8,11 @@
 #SBATCH --tmp=128G
 
 
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <job_name>"
+  exit 1
+fi
+
 MODEL_NAME="Llama-3.2-1B-Instruct"
 
 

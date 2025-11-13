@@ -4,6 +4,8 @@ from models import Cutlist
 import argparse
 import os
 import pandas as pd
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
 
 
 def automatic_inference(model, input_csv):
@@ -83,11 +85,29 @@ if __name__ == "__main__":
         "--model_name", type=str, required=True, help="The name of the model to use."
     )
     parser.add_argument(
+        "--rl_model_adapter", type=str, required=True, help="The RL model adapter path."
+    )
+    parser.add_argument(
         "--input_prompts", type=str, help="CSV file with input prompts.", default=None
     )
     args = parser.parse_args()
 
-    model = Cutlist(model_name_or_path=args.model_name)
+    base_tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    base_model = AutoModelForCausalLM.from_pretrained(args.model_name)
+
+    if args.rl_model_adapter:
+        finetuned_model = PeftModel.from_pretrained(
+            base_model, args.rl_model_adapter
+        )  # attach LoRA adapter weights
+        llm_model = finetuned_model
+    else:
+        llm_model = base_model
+
+    model = Cutlist(model_name_or_path=None)
+
+    model.llm.tokenizer = base_tokenizer
+    model.llm.model = llm_model
+
     if args.input_prompts:
         automatic_inference(model, args.input_prompts)
     else:

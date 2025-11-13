@@ -26,8 +26,9 @@ class LLM:
         device: str = get_device(),
     ):
         self.device = device
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
+        if model_name:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
 
         self.kv_cache = None
         self.kv_cache_saved = None
