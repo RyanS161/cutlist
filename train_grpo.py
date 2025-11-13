@@ -1,7 +1,6 @@
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
-from transformers import AutoModelForCausalLM
-from peft import PeftModel, LoraConfig, TaskType, get_peft_model
+from peft import AutoPeftModelForCausalLM
 import os
 import json
 import numpy as np
@@ -187,26 +186,11 @@ def reward_function(completions, prompts, **kwargs):
 
 
 # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
-base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_PATH, device_map=None)
-finetuned_with_adapter = PeftModel.from_pretrained(
-    base_model, ADAPTER_PATH
+model = AutoPeftModelForCausalLM.from_pretrained(
+    ADAPTER_PATH
 )  # attach LoRA adapter weights
 
-finetuned_model = finetuned_with_adapter.merge_and_unload()
-finetuned_model.save_pretrained(os.path.join(MODEL_OUTPUT_DIR, "base_model"))
-
 # This part is a bit sketchy but I think it makes more sense to add a new adapter on top
-
-lora_config = LoraConfig(
-    r=8,
-    lora_alpha=32,
-    target_modules=["q_proj", "v_proj"],  # adapt to your model architecture
-    lora_dropout=0.05,
-    bias="none",
-    task_type=TaskType.CAUSAL_LM,
-)
-
-model = get_peft_model(finetuned_model, lora_config)
 
 device = get_device()
 model.to(device)
