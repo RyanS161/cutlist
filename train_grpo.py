@@ -187,10 +187,8 @@ def reward_function(completions, prompts, **kwargs):
 
 # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
 model = AutoPeftModelForCausalLM.from_pretrained(
-    ADAPTER_PATH
+    ADAPTER_PATH, is_trainable=True
 )  # attach LoRA adapter weights
-
-# This part is a bit sketchy but I think it makes more sense to add a new adapter on top
 
 device = get_device()
 model.to(device)
