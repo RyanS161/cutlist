@@ -113,7 +113,7 @@ def reward_function(completions, prompts, **kwargs):
             continue
 
         reward, idx = reward_for_new_part(original_design, new_part)
-        if REWARD_CALCULATION_COUNTER % 1e4 == 0:
+        if REWARD_CALCULATION_COUNTER % 1e3 == 0:
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
             if idx is not None:
                 colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
@@ -139,13 +139,13 @@ def reward_function(completions, prompts, **kwargs):
             except Exception as e:
                 print("wandb image log failed:", e)
 
-            print("Reward for new part:", reward)
+            # print("Reward for new part:", reward)
         rewards.append(reward)
         REWARD_CALCULATION_COUNTER += 1
 
     arr = np.array(rewards, dtype=float)
     print(
-        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
+        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()} {REWARD_CALCULATION_COUNTER}"
     )
 
     return rewards
