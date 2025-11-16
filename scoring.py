@@ -62,7 +62,7 @@ def get_halfspaces(cube: ArbitraryCuboid):
     return np.hstack([A, b.reshape(-1, 1)])
 
 
-def cube_iou(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> float:
+def cube_intersection_vol(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> float:
     halfspace1 = get_halfspaces(cube1)
     halfspace2 = get_halfspaces(cube2)
     all_halfspaces = np.vstack([halfspace1, halfspace2])
@@ -85,11 +85,11 @@ def cube_iou(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> float:
     hull = ConvexHull(verts)
     volume = hull.volume
 
-    volume1 = np.prod(cube1.dims)
-    volume2 = np.prod(cube2.dims)
+    # volume1 = np.prod(cube1.dims)
+    # volume2 = np.prod(cube2.dims)
 
-    iou = volume / (volume1 + volume2 - volume)
-    return iou
+    # iou = volume / (volume1 + volume2 - volume)
+    return volume
 
 
 def obb_axes(R):
@@ -146,25 +146,44 @@ def obb_distance(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid, eps=1e-12):
 def assemblability_score(cube1: ArbitraryCuboid, cube2: ArbitraryCuboid) -> float:
     """Compute an assemblability score based on OBB distance."""
     # Positive score means separated, negative means overlapping. 0 means touching.
-    TANH_SCALING_FACTOR = 1e-2
+    DISTANCE_SCALING_FACTOR = 2e-1
+    INTERSECTION_SCALING_FACTOR = 1e-3
     distance = obb_distance(cube1, cube2)
     if distance == 0:
-        iou = cube_iou(cube1, cube2)
-        score = -iou
+        intersection_vol = cube_intersection_vol(cube1, cube2)
+        score = np.tanh(-intersection_vol * INTERSECTION_SCALING_FACTOR)
     else:
-        score = np.tanh(distance * TANH_SCALING_FACTOR)
+        score = np.tanh(distance * DISTANCE_SCALING_FACTOR)
     return score
+
+
+FLOOR_DEPTH = 1
+floor_transform = np.eye(4)
+floor_transform[:3, 3] = np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, -FLOOR_DEPTH]) / 2.0
+FLOOR_PART = ArbitraryCuboid(
+    dims=[BOUNDS_DIM_Y, 1000, FLOOR_DEPTH], transform=floor_transform
+)
+
+MIN_DIM = 7
 
 
 def reward_for_new_part(design, new_part) -> float:
     """Compute the minimum assemblability score of new_part with all existing parts."""
-    # TODO: Need to program in bounds from the design later
-    FLOOR_DEPTH = 1
-    floor_transform = np.eye(4)
-    floor_transform[:3, 3] = np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, -FLOOR_DEPTH]) / 2.0
-    FLOOR_PART = ArbitraryCuboid(
-        dims=[BOUNDS_DIM_Y, 1000, FLOOR_DEPTH], transform=floor_transform
-    )
+
+    # Basic checks for the new part
+
+    # Zero reward if the part is too small
+    if np.any(new_part.dims < MIN_DIM):
+        return 0.0, None
+
+    # Zero reward if the part is out of bounds
+    part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
+    part_max = new_part.transform[:3, 3] + np.array(new_part.dims) / 2.0
+    if np.any(part_min < 0) or np.any(
+        part_max > np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
+    ):
+        return 0.0, None
+
     scores = np.zeros(len(design.parts) + 1)
     scores[-1] = assemblability_score(new_part, FLOOR_PART)
     for i, existing_part in enumerate(design.parts):
@@ -178,8 +197,8 @@ def reward_for_new_part(design, new_part) -> float:
 
     # TODO: Make sure that this makes sense
     # Trying to give maximum penalty in the case where there is overlap
-    if score < 0:
-        score = -1.0
+    # if score < 0:
+    #     score = -1.0
 
     reward = 1 - abs(score)
 
