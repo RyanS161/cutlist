@@ -11,8 +11,6 @@ from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
 import wandb
 
-REWARD_CALCULATION_COUNTER = 0
-
 
 # Replace inline expansion logic with reusable functions
 def expand_example(example):
@@ -92,7 +90,6 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
 
 # Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
-    global REWARD_CALCULATION_COUNTER
     rewards = []
 
     original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
@@ -113,7 +110,7 @@ def reward_function(completions, prompts, **kwargs):
             continue
 
         reward, idx = reward_for_new_part(original_design, new_part)
-        if REWARD_CALCULATION_COUNTER % 1e3 == 0:
+        if kwargs["trainer_state"].global_step % 1e3 == 0:
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
             if idx is not None:
                 colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
@@ -134,18 +131,17 @@ def reward_function(completions, prompts, **kwargs):
                                 image, caption=f"Reward {reward:.4f}"
                             )
                         },
-                        step=int(REWARD_CALCULATION_COUNTER),
+                        # step=int(kwargs["trainer_state"].global_step),
                     )
             except Exception as e:
                 print("wandb image log failed:", e)
 
             # print("Reward for new part:", reward)
         rewards.append(reward)
-        REWARD_CALCULATION_COUNTER += 1
 
     arr = np.array(rewards, dtype=float)
     print(
-        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()} {REWARD_CALCULATION_COUNTER}"
+        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
     )
 
     return rewards
@@ -187,6 +183,21 @@ if __name__ == "__main__":
         help="Name for the training run (for logging purposes).",
     )
     args = parser.parse_args()
+
+    args.finetuning_data_dir = (
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data"
+    )
+    args.rl_data_dir = (
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_tuning_data"
+    )
+    args.base_model_path = "/Users/ryanslocum/Documents/current_courses/semesterProject/Llama-3.2-1B-Instruct"
+    args.adapter_path = (
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuned"
+    )
+    args.model_output_dir = (
+        "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_grpo_cutlist"
+    )
+    args.run_name = "test-test"
 
     # Expand tildes and convert to absolute paths
     FINETUNING_DATA_DIR = os.path.abspath(os.path.expanduser(args.finetuning_data_dir))

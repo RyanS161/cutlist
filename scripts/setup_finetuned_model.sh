@@ -9,7 +9,7 @@ echo "Setting up finetuned model: $FINETUNED_MODEL"
 
 BASE_MODEL=$(grep -oP '/scratch/tmp\.[0-9]+\.rslocum/\K[a-zA-Z0-9._-]+' $SCRATCH/$FINETUNED_MODEL/adapter_config.json)
 
-if [[ -n "$BASE_MODEL" ]]; then
+if [[ -z "$BASE_MODEL" ]]; then
   BASE_MODEL="Llama-3.2-1B-Instruct"
   echo "No base model detected -- using default: $BASE_MODEL"
 fi
