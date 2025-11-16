@@ -43,7 +43,7 @@ def expand_example(example):
 
     # Build cumulative assistant content entries
     for i in range(1, len(lines)):
-        cumulative = "".join(lines[:i]).strip()
+        cumulative = "".join(lines[:i]).strip() + "\n"
         new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
         new_examples.append({"messages": new_msgs})
 
@@ -88,7 +88,6 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-# Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
     rewards = []
 
@@ -101,6 +100,7 @@ def reward_function(completions, prompts, **kwargs):
         return [0.0] * len(completions)
 
     for completion in completions:
+        # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
         # design_text = completion[0]["content"]
         new_part_text = completion[0]["content"].splitlines()[-1]
         new_part = ArbitraryCuboid.from_text(new_part_text)
