@@ -184,21 +184,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    args.finetuning_data_dir = (
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuning_data"
-    )
-    args.rl_data_dir = (
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_tuning_data"
-    )
-    args.base_model_path = "/Users/ryanslocum/Documents/current_courses/semesterProject/Llama-3.2-1B-Instruct"
-    args.adapter_path = (
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/finetuned"
-    )
-    args.model_output_dir = (
-        "/Users/ryanslocum/Documents/current_courses/semesterProject/rl_grpo_cutlist"
-    )
-    args.run_name = "test-test"
-
     # Expand tildes and convert to absolute paths
     FINETUNING_DATA_DIR = os.path.abspath(os.path.expanduser(args.finetuning_data_dir))
     RL_DATA_DIR = os.path.abspath(os.path.expanduser(args.rl_data_dir))
