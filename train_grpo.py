@@ -9,49 +9,9 @@ from models import get_device
 from scoring import reward_for_new_part
 from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
+import wandb
 
-os.environ["WANDB_ENTITY"] = "ryanslocum-eth-zurich"
-os.environ["WANDB_PROJECT"] = "cutlist_rlft"
-
-
-parser = argparse.ArgumentParser(
-    description="Train GRPO for cutlist. Provide paths for data, model, adapter, and output."
-)
-parser.add_argument(
-    "--finetuning-data-dir",
-    default="~/finetuning_data",
-    help="Path to the original fine-tuning dataset (HF dataset or dataset dir).",
-)
-parser.add_argument(
-    "--rl-data-dir",
-    default="~/rl_tuning_data",
-    help="Directory to write/read expanded RL dataset (JSONL per split).",
-)
-parser.add_argument(
-    "--base-model-path",
-    default="~/Llama-3.2-1B-Instruct",
-    help="Path or model id of the base causal LM.",
-)
-parser.add_argument(
-    "--adapter-path",
-    default="~/finetuned",
-    help="Path to the PEFT/LoRA adapter weights.",
-)
-parser.add_argument(
-    "--model-output-dir",
-    default="~/rl_grpo_cutlist",
-    help="Directory where the trained GRPO model and artifacts will be saved.",
-)
-
-
-args = parser.parse_args()
-
-# Expand tildes and convert to absolute paths
-FINETUNING_DATA_DIR = os.path.abspath(os.path.expanduser(args.finetuning_data_dir))
-RL_DATA_DIR = os.path.abspath(os.path.expanduser(args.rl_data_dir))
-BASE_MODEL_PATH = os.path.abspath(os.path.expanduser(args.base_model_path))
-ADAPTER_PATH = os.path.abspath(os.path.expanduser(args.adapter_path))
-MODEL_OUTPUT_DIR = os.path.abspath(os.path.expanduser(args.model_output_dir))
+REWARD_CALCULATION_COUNTER = 0
 
 
 # Replace inline expansion logic with reusable functions
@@ -130,17 +90,8 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-# Configuration: original dataset source and where to save expanded datasets
-
-# Expand both train and test and save expanded versions; get expanded train for training
-expand_and_save(FINETUNING_DATA_DIR, splits=("train", "test"), output_dir=RL_DATA_DIR)
-
-dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
-
-
 # Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
-    VISUALIZE = False
     rewards = []
 
     original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
@@ -161,7 +112,7 @@ def reward_function(completions, prompts, **kwargs):
             continue
 
         reward, idx = reward_for_new_part(original_design, new_part)
-        if VISUALIZE:
+        if REWARD_CALCULATION_COUNTER % 1e4 == 0:
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
             if idx is not None:
                 colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
@@ -185,30 +136,91 @@ def reward_function(completions, prompts, **kwargs):
     return rewards
 
 
-# tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
-model = AutoPeftModelForCausalLM.from_pretrained(
-    ADAPTER_PATH, is_trainable=True
-)  # attach LoRA adapter weights
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train GRPO for cutlist. Provide paths for data, model, adapter, and output."
+    )
+    parser.add_argument(
+        "--finetuning-data-dir",
+        default="~/finetuning_data",
+        help="Path to the original fine-tuning dataset (HF dataset or dataset dir).",
+    )
+    parser.add_argument(
+        "--rl-data-dir",
+        default="~/rl_tuning_data",
+        help="Directory to write/read expanded RL dataset (JSONL per split).",
+    )
+    parser.add_argument(
+        "--base-model-path",
+        default="~/Llama-3.2-1B-Instruct",
+        help="Path or model id of the base causal LM.",
+    )
+    parser.add_argument(
+        "--adapter-path",
+        default="~/finetuned",
+        help="Path to the PEFT/LoRA adapter weights.",
+    )
+    parser.add_argument(
+        "--model-output-dir",
+        default="~/rl_grpo_cutlist",
+        help="Directory where the trained GRPO model and artifacts will be saved.",
+    )
 
-device = get_device()
-model.to(device)
+    parser.add_argument(
+        "--run-name",
+        default="cutlist_grpo_run",
+        help="Name for the training run (for logging purposes).",
+    )
+    args = parser.parse_args()
 
-total_params = sum(p.numel() for p in model.parameters())
-trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-print(
-    f"MODEL DEVICE={device} TOTAL_PARAMS={total_params:,} TRAINABLE_PARAMS={trainable_params:,}"
-)
-for name, p in model.named_parameters():
-    if p.requires_grad:
-        print("TRAINABLE:", name, tuple(p.shape))
+    # Expand tildes and convert to absolute paths
+    FINETUNING_DATA_DIR = os.path.abspath(os.path.expanduser(args.finetuning_data_dir))
+    RL_DATA_DIR = os.path.abspath(os.path.expanduser(args.rl_data_dir))
+    BASE_MODEL_PATH = os.path.abspath(os.path.expanduser(args.base_model_path))
+    ADAPTER_PATH = os.path.abspath(os.path.expanduser(args.adapter_path))
+    MODEL_OUTPUT_DIR = os.path.join(
+        os.path.abspath(os.path.expanduser(args.model_output_dir)), args.run_name
+    )
+    # Configuration: original dataset source and where to save expanded datasets
 
-training_args = GRPOConfig(output_dir=MODEL_OUTPUT_DIR, max_completion_length=18)
-trainer = GRPOTrainer(
-    model=model,
-    reward_funcs=reward_function,
-    args=training_args,
-    train_dataset=dataset,
-)
-trainer.train()
+    # Expand both train and test and save expanded versions; get expanded train for training
+    expand_and_save(
+        FINETUNING_DATA_DIR, splits=("train", "test"), output_dir=RL_DATA_DIR
+    )
 
-model.save_pretrained(MODEL_OUTPUT_DIR)
+    dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
+
+    # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
+    model = AutoPeftModelForCausalLM.from_pretrained(
+        ADAPTER_PATH, is_trainable=True
+    )  # attach LoRA adapter weights
+
+    device = get_device()
+    model.to(device)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(
+        f"MODEL DEVICE={device} TOTAL_PARAMS={total_params:,} TRAINABLE_PARAMS={trainable_params:,}"
+    )
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            print("TRAINABLE:", name, tuple(p.shape))
+
+    # os.environ["WANDB_ENTITY"] = "ryanslocum-eth-zurich"
+    # os.environ["WANDB_PROJECT"] = "cutlist_rlft"
+
+    wandb.init(
+        entity="ryanslocum-eth-zurich", project="cutlist_rlft", name=args.run_name
+    )
+
+    training_args = GRPOConfig(output_dir=MODEL_OUTPUT_DIR, max_completion_length=18)
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=reward_function,
+        args=training_args,
+        train_dataset=dataset,
+    )
+    trainer.train()
+
+    model.save_pretrained(MODEL_OUTPUT_DIR)
