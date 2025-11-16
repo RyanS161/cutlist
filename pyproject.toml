@@ -16,7 +16,7 @@ dependencies = [
     "scipy>=1.16.2",
     "treelib>=1.8.0",
     "trl>=0.24.0",
-    "wandb>=0.22.2",
+    "wandb[media]>=0.22.2",
 ]
 
 [dependency-groups]

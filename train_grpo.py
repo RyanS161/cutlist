@@ -92,6 +92,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
 
 # Dummy reward function for demonstration purposes
 def reward_function(completions, prompts, **kwargs):
+    global REWARD_CALCULATION_COUNTER
     rewards = []
 
     original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
@@ -118,15 +119,29 @@ def reward_function(completions, prompts, **kwargs):
                 colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
             else:
                 colors = ["tan"] * len(meshes)
-            _ = visualize(
+            image = visualize(
                 meshes + [new_part.get_mesh()],
                 colors=colors + ["blue"],
                 opacities=[0.5] * (len(meshes) + 1),
-                show_image=True,
+                show_image=False,
                 text=f"Reward {reward:.4f}",
             )
+            try:
+                if wandb.run is not None:
+                    wandb.log(
+                        {
+                            "reward_image": wandb.Image(
+                                image, caption=f"Reward {reward:.4f}"
+                            )
+                        },
+                        step=int(REWARD_CALCULATION_COUNTER),
+                    )
+            except Exception as e:
+                print("wandb image log failed:", e)
+
             print("Reward for new part:", reward)
         rewards.append(reward)
+        REWARD_CALCULATION_COUNTER += 1
 
     arr = np.array(rewards, dtype=float)
     print(
