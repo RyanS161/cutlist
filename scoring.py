@@ -176,13 +176,13 @@ def reward_for_new_part(design, new_part) -> float:
     if np.any(new_part.dims < MIN_DIM):
         return 0.0, None
 
-    # Zero reward if the part is out of bounds
-    part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
-    part_max = new_part.transform[:3, 3] + np.array(new_part.dims) / 2.0
-    if np.any(part_min < 0) or np.any(
-        part_max > np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
-    ):
-        return 0.0, None
+    # # Zero reward if the part is out of bounds
+    # part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
+    # part_max = new_part.transform[:3, 3] + np.array(new_part.dims) / 2.0
+    # if np.any(part_min < 0) or np.any(
+    #     part_max > np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
+    # ):
+    #     return 0.0, None
 
     scores = np.zeros(len(design.parts) + 1)
     scores[-1] = assemblability_score(new_part, FLOOR_PART)
