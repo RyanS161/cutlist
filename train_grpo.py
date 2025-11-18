@@ -109,11 +109,11 @@ def reward_function(completions, prompts, **kwargs):
             rewards.append(0.0)
             continue
 
-        reward, idx = reward_for_new_part(original_design, new_part)
+        reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
         if kwargs["trainer_state"].global_step % 1e3 == 0:
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
-            if idx is not None:
-                colors = ["red" if i == idx else "tan" for i in range(len(meshes))]
+            if idcs is not None:
+                colors = ["red" if i in idcs else "tan" for i in range(len(meshes))]
             else:
                 colors = ["tan"] * len(meshes)
             image = visualize(
@@ -121,7 +121,7 @@ def reward_function(completions, prompts, **kwargs):
                 colors=colors + ["blue"],
                 opacities=[0.5] * (len(meshes) + 1),
                 show_image=False,
-                text=f"Reward {reward:.4f}",
+                text=f"Reward {reward:.4f} \n {reward_string}",
             )
             try:
                 if wandb.run is not None:

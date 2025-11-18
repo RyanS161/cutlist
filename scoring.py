@@ -164,46 +164,78 @@ FLOOR_PART = ArbitraryCuboid(
     dims=[BOUNDS_DIM_Y, 1000, FLOOR_DEPTH], transform=floor_transform
 )
 
-MIN_DIM = 7
 
-
-def reward_for_new_part(design, new_part) -> float:
-    """Compute the minimum assemblability score of new_part with all existing parts."""
+def reward_for_new_part(design, new_part):
+    """Compute the minimum assemblability score of new_part with all existing parts.
+    Returns (reward, scored_part_idx, reason_str).
+    """
+    MIN_DIM = 5
+    DIST_PENALTY_SCALING = 2e-1
 
     # Basic checks for the new part
 
     # Zero reward if the part is too small
     if np.any(new_part.dims < MIN_DIM):
-        return 0.0, None
+        return 0.0, None, f"Part is too small: {new_part.dims}"
 
-    # # Zero reward if the part is out of bounds
-    # part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
-    # part_max = new_part.transform[:3, 3] + np.array(new_part.dims) / 2.0
-    # if np.any(part_min < 0) or np.any(
-    #     part_max > np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
-    # ):
-    #     return 0.0, None
+    # Checks for boundary violations
+    part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
+    part_max = new_part.transform[:3, 3] + np.array(new_part.dims) / 2.0
+    if np.any(part_min < 0) or np.any(
+        part_max > np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
+    ):
+        # If it violates the floor boundary with give the distance penalty, else we give 0:
+        if part_min[2] < 0:
+            violation_distance = np.maximum(
+                -part_min, part_max - np.array([BOUNDS_DIM_X, BOUNDS_DIM_Y, 1000])
+            ).max()
+            reward = 1 - np.tanh(violation_distance)
+            return reward, None, f"Part is below floor: violation {violation_distance}"
+        else:
+            return 0.0, None, f"Part is out of bounds: min {part_min}, max {part_max}"
 
-    scores = np.zeros(len(design.parts) + 1)
-    scores[-1] = assemblability_score(new_part, FLOOR_PART)
+    floor_distance = obb_distance(new_part, FLOOR_PART)
+
+    distances = np.zeros(len(design.parts))
     for i, existing_part in enumerate(design.parts):
-        scores[i] = assemblability_score(new_part, existing_part)
+        score = obb_distance(new_part, existing_part)
+        distances[i] = score
 
-    # If there is a negative score (overlap), return the minimum (most negative) score
-    # Else, return the minimum positive score (closest to zero)
-    # Also get the scored part
-    scored_idx = np.argmin(scores)
-    score = scores[scored_idx]
+    intersection_volumes = np.zeros(len(design.parts))
+    for i, existing_part in enumerate(design.parts):
+        if distances[i] > 0:
+            intersection_volumes[i] = 0.0
+            continue
+        intersection_vol = cube_intersection_vol(new_part, existing_part)
+        intersection_volumes[i] = intersection_vol
 
-    # TODO: Make sure that this makes sense
-    # Trying to give maximum penalty in the case where there is overlap
-    # if score < 0:
-    #     score = -1.0
+    overall_intersection_volume = np.sum(intersection_volumes)
+    percent_intersection = overall_intersection_volume / np.prod(new_part.dims)
 
-    reward = 1 - abs(score)
+    if percent_intersection > 0:
+        reward = 1 - percent_intersection
+        scored_idcs = np.where(intersection_volumes > 0)[0]
 
-    if scored_idx == len(design.parts):
-        # Scored against floor
-        return reward, None
+        return (
+            reward,
+            scored_idcs,
+            f"Intersection volume: {overall_intersection_volume:.1f} ({percent_intersection * 100:.2f}%)",
+        )
 
-    return reward, scored_idx
+    min_distance_part = np.argmin(distances)
+    min_distance = distances[min_distance_part]
+
+    if floor_distance <= min_distance:
+        scored_idcs = None
+        dist = floor_distance
+        reason = f"Distance to floor: {floor_distance:.2f}"
+    else:
+        scored_idcs = [
+            min_distance_part,
+        ]
+        dist = min_distance
+        reason = f"Distance to part idx {scored_idcs[0]}: {min_distance:.2f}"
+
+    reward = 1 - np.tanh(dist * DIST_PENALTY_SCALING)
+
+    return reward, scored_idcs, reason
