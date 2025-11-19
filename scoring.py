@@ -170,8 +170,9 @@ def reward_for_new_part(design, new_part):
     Returns (reward, scored_part_idx, reason_str).
     """
     MIN_DIM = 5
-    MAX_DIM = 28
+    # MAX_DIM = 28
     DIST_PENALTY_SCALING = 2e-1
+    VOLUME_PENALTY_SCALING = 1e-3
 
     # Basic checks for the new part
 
@@ -180,9 +181,9 @@ def reward_for_new_part(design, new_part):
         return 0.0, None, f"Part is too small: {new_part.dims}"
 
     # Zero reward if the part has more than two too large dimension
-    too_large_dims = sum(1 for dim in new_part.dims if dim > MAX_DIM)
-    if too_large_dims > 2:
-        return 0.0, None, f"Part has too many large dimensions: {new_part.dims}"
+    # too_large_dims = sum(1 for dim in new_part.dims if dim > MAX_DIM)
+    # if too_large_dims > 2:
+    #     return 0.0, None, f"Part has too many large dimensions: {new_part.dims}"
 
     # Checks for boundary violations
     part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
@@ -216,16 +217,16 @@ def reward_for_new_part(design, new_part):
         intersection_volumes[i] = intersection_vol
 
     overall_intersection_volume = np.sum(intersection_volumes)
-    percent_intersection = overall_intersection_volume / np.prod(new_part.dims)
+    # percent_intersection = overall_intersection_volume / np.prod(new_part.dims)
 
-    if percent_intersection > 0:
-        reward = 1 - percent_intersection
+    if overall_intersection_volume > 0:
+        reward = 1 - np.tanh(overall_intersection_volume * VOLUME_PENALTY_SCALING)
         scored_idcs = np.where(intersection_volumes > 0)[0]
 
         return (
             reward,
             scored_idcs,
-            f"Intersection volume: {overall_intersection_volume:.1f} ({percent_intersection * 100:.2f}%)",
+            f"Intersection volume: {overall_intersection_volume:.1f}",
         )
 
     min_distance_part = np.argmin(distances)
