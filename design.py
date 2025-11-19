@@ -267,7 +267,7 @@ class ArbitraryCuboid(WoodPart):
             # Invalid text format for ArbitraryCuboid.
             return None
 
-        if not np.all([part.isdigit() for part in parts]):
+        if not np.all([part.isdecimal() for part in parts]):
             return None
 
         dims = np.array([float(parts[0]), float(parts[1]), float(parts[2])])
