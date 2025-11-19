@@ -170,6 +170,7 @@ def reward_for_new_part(design, new_part):
     Returns (reward, scored_part_idx, reason_str).
     """
     MIN_DIM = 5
+    MAX_DIM = 28
     DIST_PENALTY_SCALING = 2e-1
 
     # Basic checks for the new part
@@ -177,6 +178,11 @@ def reward_for_new_part(design, new_part):
     # Zero reward if the part is too small
     if np.any(new_part.dims < MIN_DIM):
         return 0.0, None, f"Part is too small: {new_part.dims}"
+
+    # Zero reward if the part has more than two too large dimension
+    too_large_dims = sum(1 for dim in new_part.dims if dim > MAX_DIM)
+    if too_large_dims > 2:
+        return 0.0, None, f"Part has too many large dimensions: {new_part.dims}"
 
     # Checks for boundary violations
     part_min = new_part.transform[:3, 3] - np.array(new_part.dims) / 2.0
