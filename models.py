@@ -1,10 +1,10 @@
 import copy
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.cache_utils import DynamicCache
-from generate_data import create_instruction
+from transformers import CLIPProcessor, CLIPModel
 
+from generate_data import create_instruction
 from design import WoodDesign, ArbitraryCuboid
 
 
@@ -164,3 +164,54 @@ class Cutlist:
             return None
 
         return self.llm.tokenizer.decode(result_ids, skip_special_tokens=True)
+
+
+class CLIP_Model:
+    def __init__(self, model_name, device=get_device()):
+        self.model = CLIPModel.from_pretrained(model_name).to(device)
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.device = device
+
+    def get_image_embedding(self, images):
+        """
+        Get image embeddings for one or more images.
+        images: PIL.Image or list of PIL.Image
+        Returns: torch.Tensor of shape (batch_size, embedding_dim)
+        """
+        if not isinstance(images, list):
+            images = [images]
+        inputs = self.processor(images=images, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            image_embeds = self.model.get_image_features(**inputs)
+        return image_embeds
+
+    def get_text_embedding(self, texts):
+        """
+        Get text embeddings for one or more texts.
+        texts: str or list of str
+        Returns: torch.Tensor of shape (batch_size, embedding_dim)
+        """
+        if not isinstance(texts, list):
+            texts = [texts]
+        inputs = self.processor(text=texts, return_tensors="pt", padding=True).to(
+            self.device
+        )
+        with torch.no_grad():
+            text_embeds = self.model.get_text_features(**inputs)
+        return text_embeds
+
+    def compare(self, images, texts):
+        """
+        Compare images and texts using cosine similarity.
+        images: PIL.Image or list of PIL.Image
+        texts: str or list of str
+        Returns: similarity matrix of shape (num_images, num_texts)
+        """
+        image_embeds = self.get_image_embedding(images)
+        text_embeds = self.get_text_embedding(texts)
+        # Normalize embeddings
+        image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+        text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+        # Compute cosine similarity
+        similarity = image_embeds @ text_embeds.t()
+        return similarity

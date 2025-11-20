@@ -528,6 +528,82 @@ class WoodDesign:
         meshes = [part.get_mesh() for part in self.parts]
         return visualize(meshes, **kwargs)
 
+    def visualize_four_img(self, **kwargs):
+        """
+        Render the design from four camera positions ('xy','yz','zx','iso'),
+        arrange them in a 2x2 grid and return the concatenated image as a numpy array.
+        """
+
+        # Use four isometric corner views instead of planar presets.
+        # Compute a combined bounding box from all parts and place cameras at the 4 corners
+        # looking at the bounding-box center.
+        meshes = [part.get_mesh() for part in self.parts]
+        if len(meshes) == 0:
+            # fallback to iso if nothing to view
+            cams = ["iso", "iso", "iso", "iso"]
+        else:
+            # Each mesh.bounds -> (xmin, xmax, ymin, ymax, zmin, zmax)
+            mins = np.min(
+                np.array([[m.bounds[0], m.bounds[2], m.bounds[4]] for m in meshes]),
+                axis=0,
+            )
+            maxs = np.max(
+                np.array([[m.bounds[1], m.bounds[3], m.bounds[5]] for m in meshes]),
+                axis=0,
+            )
+
+            center = (mins + maxs) / 2.0
+            extents = maxs - mins
+            diag = np.linalg.norm(extents)
+            pad = diag * 0.8 if diag > 0 else 100.0
+
+            # Four XY corners, elevated above the top of the bounding box
+            corners = [
+                (mins[0] - pad, mins[1] - pad, maxs[2] + pad),
+                (mins[0] - pad, maxs[1] + pad, maxs[2] + pad),
+                (maxs[0] + pad, mins[1] - pad, maxs[2] + pad),
+                (maxs[0] + pad, maxs[1] + pad, maxs[2] + pad),
+            ]
+
+            # camera_position format: (position, focal_point, viewup)
+            cams = [(corner, tuple(center), (0, 0, 1)) for corner in corners]
+
+        images = []
+
+        # Avoid saving or showing during intermediate renders
+        local_kwargs = dict(kwargs)
+        local_kwargs.pop("filename", None)
+        local_kwargs["show_image"] = False
+        local_kwargs["colors"] = ["tan"] * len(meshes)
+
+        for cam in cams:
+            img = self.visualize_img(camera_position=cam, **local_kwargs)
+
+            # Normalize to uint8 image and convert to PIL RGB
+            if img.dtype != np.uint8:
+                if img.max() <= 1.01:
+                    img = (np.clip(img, 0.0, 1.0) * 255.0).astype(np.uint8)
+                else:
+                    img = np.clip(img, 0, 255).astype(np.uint8)
+            pil_img = Image.fromarray(img).convert("RGB")
+            images.append(pil_img)
+
+        if len(images) != 4:
+            raise RuntimeError("Expected 4 images for the 2x2 grid")
+
+        # Make all images the same size (use the max width/height)
+        widths, heights = zip(*(im.size for im in images))
+        max_w, max_h = max(widths), max(heights)
+        images = [im.resize((max_w, max_h)) for im in images]
+
+        # Create 2x2 canvas and paste images
+        canvas = Image.new("RGB", (max_w * 2, max_h * 2), (255, 255, 255))
+        positions = [(0, 0), (max_w, 0), (0, max_h), (max_w, max_h)]
+        for im, pos in zip(images, positions):
+            canvas.paste(im, pos)
+
+        return np.array(canvas)
+
     def visualize_gif(self, filename, fps=4):
         meshes = [part.get_mesh() for part in self.parts]
         images = []
