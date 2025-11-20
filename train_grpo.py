@@ -5,11 +5,12 @@ import os
 import json
 import numpy as np
 
-from models import get_device
+from models import get_device, CLIP_Model
 from scoring import reward_for_new_part
 from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
 import wandb
+import re
 
 
 # Replace inline expansion logic with reusable functions
@@ -86,65 +87,6 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
             with open(save_path, "w", encoding="utf-8") as f:
                 for item in converted:
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
-
-
-def reward_function(completions, prompts, **kwargs):
-    rewards = []
-
-    original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
-    original_design = WoodDesign.from_txt(
-        original_design_text, design_type=ArbitraryCuboid
-    )
-    if original_design is None:
-        print("Design could not be processed, text was:", repr(original_design_text))
-        return [0.0] * len(completions)
-
-    for completion in completions:
-        # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
-        # design_text = completion[0]["content"]
-        new_part_text = completion[0]["content"].splitlines()[-1]
-        new_part = ArbitraryCuboid.from_text(new_part_text)
-        if new_part is None:
-            print("New part text was:", repr(new_part_text))
-            rewards.append(0.0)
-            continue
-
-        reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
-        if kwargs["trainer_state"].global_step % 1e3 == 0:
-            meshes = [design_part.get_mesh() for design_part in original_design.parts]
-            if idcs is not None:
-                colors = ["red" if i in idcs else "tan" for i in range(len(meshes))]
-            else:
-                colors = ["tan"] * len(meshes)
-            image = visualize(
-                meshes + [new_part.get_mesh()],
-                colors=colors + ["blue"],
-                opacities=[0.5] * (len(meshes) + 1),
-                show_image=False,
-                text=f"Reward {reward:.4f} \n {reward_string}",
-            )
-            try:
-                if wandb.run is not None:
-                    wandb.log(
-                        {
-                            "reward_image": wandb.Image(
-                                image, caption=f"Reward {reward:.4f}"
-                            )
-                        },
-                        # step=int(kwargs["trainer_state"].global_step),
-                    )
-            except Exception as e:
-                print("wandb image log failed:", e)
-
-            # print("Reward for new part:", reward)
-        rewards.append(reward)
-
-    arr = np.array(rewards, dtype=float)
-    print(
-        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
-    )
-
-    return rewards
 
 
 if __name__ == "__main__":
@@ -224,6 +166,85 @@ if __name__ == "__main__":
     wandb.init(
         entity="ryanslocum-eth-zurich", project="cutlist_rlft", name=args.run_name
     )
+
+    clip_instance = CLIP_Model("openai/clip-vit-base-patch32", device=device)
+
+    def reward_function(completions, prompts, **kwargs):
+        rewards = []
+
+        prompt_content = (
+            prompts[0][1].get("content", "")
+            if isinstance(prompts[0][1], dict)
+            else str(prompts[0][1])
+        )
+        m = re.search(r"###\s*Input:\s*\n([\s\S]*?)(?:\n###|$)", prompt_content)
+        item_description = m.group(1).strip() if m else prompt_content.strip()
+
+        original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
+        original_design = WoodDesign.from_txt(
+            original_design_text, design_type=ArbitraryCuboid
+        )
+        if original_design is None:
+            print(
+                "Design could not be processed, text was:", repr(original_design_text)
+            )
+            return [0.0] * len(completions)
+
+        for completion in completions:
+            # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
+            # design_text = completion[0]["content"]
+            new_part_text = completion[0]["content"].splitlines()[-1]
+            new_part = ArbitraryCuboid.from_text(new_part_text)
+            if new_part is None:
+                print("New part text was:", repr(new_part_text))
+                rewards.append(0.0)
+                continue
+
+            reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
+
+            clip_similarity = clip_instance.compare(
+                images=[np.array(new_part.visualize_four_img())],
+                texts=[item_description],
+            )
+
+            if kwargs["trainer_state"].global_step % 1e3 == 0:
+                meshes = [
+                    design_part.get_mesh() for design_part in original_design.parts
+                ]
+                if idcs is not None:
+                    colors = ["red" if i in idcs else "tan" for i in range(len(meshes))]
+                else:
+                    colors = ["tan"] * len(meshes)
+                image = visualize(
+                    meshes + [new_part.get_mesh()],
+                    colors=colors + ["blue"],
+                    opacities=[0.5] * (len(meshes) + 1),
+                    show_image=False,
+                    text=f"Reward {reward:.4f} \n {reward_string}",
+                )
+                try:
+                    if wandb.run is not None:
+                        wandb.log(
+                            {
+                                "reward_image": wandb.Image(
+                                    image,
+                                    caption=f"Reward {reward:.4f} CLIP sim {clip_similarity[0]:.4f}",
+                                )
+                            },
+                            # step=int(kwargs["trainer_state"].global_step),
+                        )
+                except Exception as e:
+                    print("wandb image log failed:", e)
+
+                # print("Reward for new part:", reward)
+            rewards.append(reward)
+
+        arr = np.array(rewards, dtype=float)
+        print(
+            f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
+        )
+
+        return rewards
 
     training_args = GRPOConfig(
         output_dir=MODEL_OUTPUT_DIR, max_completion_length=18, beta=0.1
