@@ -225,7 +225,9 @@ if __name__ == "__main__":
         entity="ryanslocum-eth-zurich", project="cutlist_rlft", name=args.run_name
     )
 
-    training_args = GRPOConfig(output_dir=MODEL_OUTPUT_DIR, max_completion_length=18)
+    training_args = GRPOConfig(
+        output_dir=MODEL_OUTPUT_DIR, max_completion_length=18, beta=0.1
+    )
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=reward_function,
