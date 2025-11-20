@@ -210,7 +210,7 @@ if __name__ == "__main__":
             reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
 
             clip_similarity = clip_instance.compare(
-                images=[np.array(new_part.visualize_four_img())],
+                images=[np.array(original_design.visualize_four_img())],
                 texts=[item_description],
             )
 
