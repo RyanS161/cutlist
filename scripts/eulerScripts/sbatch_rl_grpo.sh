@@ -19,6 +19,8 @@ FINETUNED_MODEL="$2"
 
 source ~/cutlist/scripts/setup_finetuned_model.sh "$FINETUNED_MODEL"
 
+source ~/cutlist/scripts/eulerScripts/setup_clip.sh
+
 uv run train_grpo.py \
     --finetuning-data-dir ~/finetuning_data \
     --rl-data-dir ~/rl_tuning_data \
@@ -26,3 +28,4 @@ uv run train_grpo.py \
     --adapter-path $TMPDIR/finetuned \
     --model-output-dir $SCRATCH/rl_grpo_cutlist \
     --run-name $JOB_NAME \
+    --clip-dir $TMPDIR/clip-vit-base-patch32 \

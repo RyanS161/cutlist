@@ -124,6 +124,12 @@ if __name__ == "__main__":
         default="cutlist_grpo_run",
         help="Name for the training run (for logging purposes).",
     )
+
+    parser.add_argument(
+        "--clip-dir",
+        default="~/clip-vit-base-patch32",
+        help="Directory where the CLIP model is located.",
+    )
     args = parser.parse_args()
 
     # Expand tildes and convert to absolute paths
@@ -134,6 +140,7 @@ if __name__ == "__main__":
     MODEL_OUTPUT_DIR = os.path.join(
         os.path.abspath(os.path.expanduser(args.model_output_dir)), args.run_name
     )
+    CLIP_DIR = os.path.abspath(os.path.expanduser(args.clip_dir))
     # Configuration: original dataset source and where to save expanded datasets
 
     # Expand both train and test and save expanded versions; get expanded train for training
@@ -167,7 +174,7 @@ if __name__ == "__main__":
         entity="ryanslocum-eth-zurich", project="cutlist_rlft", name=args.run_name
     )
 
-    clip_instance = CLIP_Model("openai/clip-vit-base-patch32", device=device)
+    clip_instance = CLIP_Model(CLIP_DIR, device=device)
 
     def reward_function(completions, prompts, **kwargs):
         rewards = []
