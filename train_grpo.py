@@ -235,7 +235,7 @@ if __name__ == "__main__":
                             {
                                 "reward_image": wandb.Image(
                                     image,
-                                    caption=f"Reward {reward:.4f} CLIP sim {clip_similarity[0]:.4f}",
+                                    caption=f"Reward {reward:.4f} CLIP sim {float(clip_similarity[0][0]):.4f}",
                                 )
                             },
                             # step=int(kwargs["trainer_state"].global_step),
