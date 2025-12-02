@@ -16,11 +16,24 @@ source ~/cutlist/scripts/eulerScripts/setup_euler_python.sh
 
 cd $TMPDIR
 
+
+# Authenticate Hugging Face CLI using a token from a file
+HF_TOKEN_FILE=~/hf_token.txt
+if [ -f "$HF_TOKEN_FILE" ]; then
+    HF_TOKEN=$(cat "$HF_TOKEN_FILE")
+    hf auth login --token "$HF_TOKEN"
+else
+    echo "Hugging Face token file not found at $HF_TOKEN_FILE"
+    exit 1
+fi
+
+
+
 ##### Part One: Clone and unzip the data #####
 
 if [ ! -d "StableText2Brick" ]; then
     echo "StableText2Brick directory does not exist. Cloning repository... $(date)"
-    git clone https://huggingface.co/datasets/AvaLovelace/StableText2Brick
+    hf download AvaLovelace/StableText2Brick --repo-type=dataset --local-dir StableText2Brick
     echo "Clone complete $(date)"
 else
     echo "StableText2Brick directory already exists. Skipping clone. $(date)"
@@ -29,7 +42,7 @@ fi
 
 if [ ! -d "PartNet-archive" ]; then
     echo "PartNet directory does not exist. Cloning repository... $(date)"
-    hf download ShapeNet/PartNet-archive --repo-type=dataset
+    hf download ShapeNet/PartNet-archive --repo-type=dataset --local-dir PartNet-archive
     echo "Clone complete $(date)"
     cd PartNet-archive
 else
@@ -42,8 +55,8 @@ fi
 # Extract the multi-part archive
 if [ -f "data_v0_chunk.zip" ] && [ ! -d "data_v0" ]; then
     echo "Extracting PartNet data_v0 multi-part archive... $(date)"
-    zip -s 0 data_v0_chunk.zip --out data_v0_combined.zip
-    unzip -q data_v0_combined.zip
+    zip -s 0 data_v0_chunk.zip --out data_v0_combined.zip >/dev/null 2>&1
+    unzip -qq data_v0_combined.zip
     rm data_v0_combined.zip
     echo "PartNet data_v0 extraction complete. -- $(date)"
     echo "Size of extracted data_v0:"
@@ -55,13 +68,13 @@ fi
 # Extract additional archives if needed
 if [ -f "ins_seg_h5.zip" ] && [ ! -d "ins_seg_h5" ]; then
     echo "Extracting ins_seg_h5... $(date)"
-    unzip -q ins_seg_h5.zip
+    unzip -qq ins_seg_h5.zip
     echo "Extraction of ins_seg_h5 complete. -- $(date)"
 fi
 
 if [ -f "sem_seg_h5.zip" ] && [ ! -d "sem_seg_h5" ]; then
     echo "Extracting sem_seg_h5... $(date)"
-    unzip -q sem_seg_h5.zip
+    unzip -qq sem_seg_h5.zip
     echo "Extraction of sem_seg_h5 complete. -- $(date)"
 fi
 
@@ -118,9 +131,9 @@ for folder in "$SCAN_DIR"/*; do
         rm -rf "$folder"
         ((deleted_count++))
     elif is_valid_category "$model_cat"; then
-        log "Valid category '$model_cat' in $folder_name - KEEPING"
+        echo "Valid category '$model_cat' in $folder_name - KEEPING"
     else
-        log "Invalid category '$model_cat' in $folder_name - DELETING"
+        # echo "Invalid category '$model_cat' in $folder_name - DELETING"
         rm -rf "$folder"
         ((deleted_count++))
     fi
