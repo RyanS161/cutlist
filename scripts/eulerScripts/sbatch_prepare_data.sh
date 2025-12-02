@@ -6,7 +6,8 @@
 #SBATCH -c 16
 #SBATCH --tmp=512G
 
-VERBOSE=0
+export HF_HOME=$TMPDIR/huggingface
+export HF_DATASETS_CACHE=$TMPDIR/huggingface/datasets
 
 echo "Starting job -- $(date)"
 
@@ -28,7 +29,7 @@ fi
 
 if [ ! -d "PartNet-archive" ]; then
     echo "PartNet directory does not exist. Cloning repository... $(date)"
-    git clone git@hf.co:datasets/ShapeNet/PartNet-archive
+    hf download ShapeNet/PartNet-archive --repo-type=dataset
     echo "Clone complete $(date)"
     cd PartNet-archive
 else
