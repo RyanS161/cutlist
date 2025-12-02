@@ -39,7 +39,9 @@ else
     echo "StableText2Brick directory already exists. Skipping clone. $(date)"
 fi
 
-if [ ! -d "$SCRATCH/data/cleaned_data_v0.tar" ]; then
+if [ ! -f "$SCRATCH/data/cleaned_data_v0.tar" ]; then
+
+    
 
     if [ ! -d "PartNet-archive" ]; then
         echo "PartNet directory does not exist. Cloning repository... $(date)"
@@ -162,9 +164,9 @@ else
     echo "Cleaned data already exists in $SCRATCH/data/. Skipping cleaning step, copying data over $(date)"
     cd $TMPDIR
 
-    cp cleaned_data_v0.tar $SCRATCH/data/
+    cp $SCRATCH/data/cleaned_data_v0.tar .
     echo "Untarring cleaned data in scratch -- $(date)"
-    tar -xf $SCRATCH/data/cleaned_data_v0.tar -C $TMPDIR/
+    tar -xf cleaned_data_v0.tar -C $TMPDIR/
     echo "Untarring complete -- $(date)"
 fi
 
