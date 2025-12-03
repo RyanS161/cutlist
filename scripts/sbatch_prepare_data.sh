@@ -12,7 +12,7 @@ export HF_DATASETS_CACHE=$TMPDIR/huggingface/datasets
 echo "Starting job -- $(date)"
 
 source ~/setup_github.sh
-source ~/cutlist/scripts/eulerScripts/setup_euler_python.sh 
+source ~/cutlist/scripts/setup_euler_python.sh 
 
 cd $TMPDIR
 

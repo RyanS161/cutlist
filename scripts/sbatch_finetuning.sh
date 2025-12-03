@@ -21,6 +21,6 @@ echo "Starting Training -- $(date)"
 
 cd ~/cutlist
 
-source ./scripts/eulerScripts/setup_euler_python.sh
+source ./scripts/setup_euler_python.sh
 
 source ./scripts/finetune.sh $TMPDIR/$MODEL_NAME $SCRATCH/model_output/ $SLURM_JOB_ID $TMPDIR/finetuning_data
