@@ -12,5 +12,26 @@ Before you can run the data generation script, make sure you have completed the 
 - Requested access to the [PartNet dataset](https://huggingface.co/datasets/ShapeNet/PartNet-archive)
 - Generated a [Hugging Face authentication key](https://huggingface.co/docs/hub/en/security-tokens) and saved it at `~/hf_token.txt`
 
-
 Once these steps are complete, run `sbatch ~/cutlist/scripts/sbatch_prepare_data.sh` to generate the finetuning data. It will be saved at `$SCRATCH/data/finetuning_data`
+
+
+
+
+## Running SFT
+
+Assuming you have the finetuning data saved at `$SCRATCH/data/finetuning_data`, you can now train the SFT model.
+
+Prereqs for this step:
+
+- Request access to the [Llama-3.2-1B-Instruct model](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct)
+- Clone the model: `cd ~ && hf download meta-llama/Llama-3.2-1B-Instruct --local-dir ~`
+- Tar and move to scratch: `tar -cf Llama-3.2-1B-Instruct.tar ~/Llama-3.2-1B-Instruct && cp ~/Llama-3.2-1B-Instruct.tar $SCRATCH`
+
+Now you can run the SFT script: `sbatch ~/cutlist/scripts/sbatch_finetuning.sh`
+
+## Running GRPO
+
+Once the SFT model is done training, you should be able to run the following the sbatch job ID of the SFT Job: `sbatch ~/cutlist/scripts/sbatch_rl_grpo.sh run-name model_output/SFT_SBATCH_JOB_ID`
+
+
+

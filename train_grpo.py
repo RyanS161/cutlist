@@ -201,6 +201,8 @@ if __name__ == "__main__":
 
     dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
+    dataset = dataset[:1e6] # There are normally about 1M samples in the dataset but the learning levels out around 100K
+
     # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
     model = AutoPeftModelForCausalLM.from_pretrained(
         ADAPTER_PATH, is_trainable=True
