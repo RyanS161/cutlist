@@ -4,23 +4,22 @@ from models import Cutlist
 import argparse
 import os
 import pandas as pd
+import json
 
 
 def automatic_inference(model, input_csv):
     prompts_df = pd.read_csv(input_csv)
-    for idx, row in prompts_df.iterrows():
+    for _, row in prompts_df.iterrows():
+        prompt_id = int(row["prompt_id"])
         caption = row["prompt"]
-        seed = int(row["seed"]) if "seed" in row and not pd.isna(row["seed"]) else 42
-        output_dir = (
-            row["output_dir"]
-            if "output_dir" in row and not pd.isna(row["output_dir"])
-            else f"./designs/design_{idx}/"
-        )
-        os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+        seed = 42
+        output_dir = f"./designs/{prompt_id:03d}/"
+
+        os.makedirs(output_dir, exist_ok=True)
         transformers.set_seed(seed)
 
         # Generate bricks
-        print(f"Generating design {idx}...")
+        print(f"Generating design {prompt_id}...")
         start_time = time.time()
         design = model(caption)
         end_time = time.time()
@@ -31,9 +30,25 @@ def automatic_inference(model, input_csv):
 
         design_image_path = os.path.join(output_dir, "design.png")
         design_gif_path = os.path.join(output_dir, "design.gif")
+        design_stl_path = os.path.join(output_dir, "design.stl")
+        json_path = os.path.join(output_dir, "info.json")
 
-        design.visualize_img(filename=design_image_path, text=caption)
+        design.visualize_four_panel_img(filename=design_image_path)
         design.visualize_gif(filename=design_gif_path)
+
+        # Save STL
+        design.get_stl(filename=design_stl_path)
+
+        # Save JSON
+        with open(json_path, "w") as f:
+            json.dump(
+                {
+                    "generation_time": end_time - start_time,
+                    "prompt": caption,
+                },
+                f,
+                indent=4,
+            )
 
         print("Saved results to", output_dir)
         print("Generation time:", end_time - start_time)
@@ -65,9 +80,24 @@ def main(model):
 
         design_image_path = os.path.join(output_dir, "design.png")
         design_gif_path = os.path.join(output_dir, "design.gif")
+        design_stl_path = os.path.join(output_dir, "design.stl")
+        json_path = os.path.join(output_dir, "info.json")
 
         design.visualize_img(filename=design_image_path, text=caption)
         design.visualize_gif(filename=design_gif_path)
+
+        design.get_stl(filename=design_stl_path)
+
+        # Save JSON
+        with open(json_path, "w") as f:
+            json.dump(
+                {
+                    "generation_time": end_time - start_time,
+                    "prompt": caption,
+                },
+                f,
+                indent=4,
+            )
 
         print("Saved results to", output_dir)
         print("Generation time:", end_time - start_time)

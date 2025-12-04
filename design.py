@@ -71,6 +71,66 @@ def visualize(
     return image
 
 
+def visualize_four_panel_img(
+    meshes,
+    colors=None,
+    opacities=None,
+    filename=None,
+    view_size=400,
+):
+    pv.global_theme.allow_empty_mesh = True
+
+    if colors is None:
+        colors = [POSSIBLE_COLORS[i % len(POSSIBLE_COLORS)] for i in range(len(meshes))]
+    if opacities is None:
+        opacities = [1.0 for _ in range(len(meshes))]
+
+    # Define 4 isometric camera positions (azimuth, elevation)
+    views = [
+        (0, 0),
+        (180, 0),
+        (135, -90),
+        (215, -90),
+    ]
+
+    # Dark background color matching website
+    bg_color = [0.1, 0.1, 0.15]
+
+    images = []
+
+    for azimuth, elevation in views:
+        plotter = pv.Plotter(off_screen=True, window_size=[view_size, view_size])
+        for mesh, color, opacity in zip(meshes, colors, opacities):
+            plotter.add_mesh(mesh, color=color, opacity=opacity)
+
+        plotter.set_background(bg_color)
+        plotter.camera_position = "iso"
+        plotter.camera.azimuth = azimuth
+        plotter.camera.elevation = elevation
+        plotter.reset_camera()
+        plotter.camera.zoom(1.0)
+
+        img_array = plotter.screenshot(return_img=True)
+        images.append(Image.fromarray(img_array))
+        plotter.close()
+
+    # Create combined 2x2 grid image
+    grid_size = view_size * 2
+    combined = Image.new("RGB", (grid_size, grid_size), color=(26, 26, 38))
+
+    # Positions for 2x2 grid: top-left, top-right, bottom-left, bottom-right
+    positions = [(0, 0), (view_size, 0), (0, view_size), (view_size, view_size)]
+
+    for i, img in enumerate(images):
+        combined.paste(img, positions[i])
+
+    if filename is not None:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        combined.save(filename)
+
+    return combined
+
+
 def normalize_cuboid_rotation_to_positive(rot_matrix):
     """
     Find an equivalent rotation for a cuboid that has all positive Euler angles.
@@ -528,6 +588,10 @@ class WoodDesign:
         meshes = [part.get_mesh() for part in self.parts]
         return visualize(meshes, **kwargs)
 
+    def visualize_four_panel_img(self, filename, **kwargs):
+        meshes = [part.get_mesh() for part in self.parts]
+        return visualize_four_panel_img(meshes, filename=filename, **kwargs)
+
     def visualize_gif(self, filename, fps=4):
         meshes = [part.get_mesh() for part in self.parts]
         images = []
@@ -552,3 +616,15 @@ class WoodDesign:
             duration=(1000 // fps),
             loop=0,
         )
+
+    def get_stl(self, filename):
+        if not self.parts:
+            return
+
+        merged = pv.PolyData()
+        for part in self.parts:
+            merged = merged.merge(part.get_mesh())
+
+        if filename:
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            merged.save(filename)
