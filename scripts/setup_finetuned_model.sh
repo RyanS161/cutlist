@@ -26,4 +26,4 @@ cp $SCRATCH/$BASE_MODEL.tar $TMPDIR
 tar -xf $TMPDIR/$BASE_MODEL.tar -C $TMPDIR/
 
 cd ~/cutlist
-source scripts/eulerScripts/setup_euler_python.sh
+source scripts/setup_euler_python.sh
