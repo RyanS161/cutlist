@@ -36,10 +36,12 @@ def expand_example(example):
 
     # If there is no text, this is already terminal.
     # Otherwise, it's the start of a sequence, so not terminal.
-    lines = assistant_text.splitlines(keepends=True) if assistant_text else []
+    raw_lines = assistant_text.splitlines(keepends=True) if assistant_text else []
+    lines = [line for line in raw_lines if line.strip()]
+
     new_examples.append({"messages": new_msgs, "is_terminal": len(lines) == 0})
 
-    if assistant_text == "":
+    if not lines:
         return new_examples
 
     # Build cumulative assistant content entries
@@ -147,7 +149,9 @@ def reward_function(completions, prompts, is_terminal, **kwargs):
             )
 
         if original_design is None:
-            print("Original design could not be processed")
+            print(
+                f"Original design could not be processed. Text: {repr(original_design_text)}"
+            )
             rewards.append(0.0)
             continue
 
