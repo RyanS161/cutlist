@@ -102,7 +102,14 @@ def reward_function(completions, prompts, is_terminal, **kwargs):
 
     for completion, prompt, term in zip(completions, prompts, is_terminal):
         # Extract the assistant's content from prompt and completion to find what was generated
-        prompt_last_content = prompt[-1]["content"]
+
+        # Find the last assistant message in the prompt to get the context (partial design)
+        prompt_last_content = ""
+        for msg in reversed(prompt):
+            if msg.get("role") == "assistant":
+                prompt_last_content = msg.get("content", "")
+                break
+
         completion_last_content = completion[-1]["content"]
 
         # The generated text is the difference
