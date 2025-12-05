@@ -33,19 +33,25 @@ def expand_example(example):
 
     # First entry: assistant content is empty
     new_msgs = non_assistant_msgs + [{"role": "assistant", "content": ""}]
-    new_examples.append({"messages": new_msgs})
+
+    # If there is no text, this is already terminal.
+    # Otherwise, it's the start of a sequence, so not terminal.
+    lines = assistant_text.splitlines(keepends=True) if assistant_text else []
+    new_examples.append({"messages": new_msgs, "is_terminal": len(lines) == 0})
 
     if assistant_text == "":
         return new_examples
 
-    # Split into lines keeping newline characters
-    lines = assistant_text.splitlines(keepends=True)
-
     # Build cumulative assistant content entries
-    for i in range(1, len(lines)):
+    # We iterate up to len(lines) + 1 to include the case where the prompt is the full design
+    for i in range(1, len(lines) + 1):
         cumulative = "".join(lines[:i]).strip() + "\n"
         new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
-        new_examples.append({"messages": new_msgs})
+
+        # If i == len(lines), we have included all lines in the prompt.
+        # The expected behavior is to stop.
+        is_terminal = i == len(lines)
+        new_examples.append({"messages": new_msgs, "is_terminal": is_terminal})
 
     return new_examples
 
@@ -76,8 +82,9 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
         converted = []
         for item in expanded_list:
             msgs = item.get("messages", [])
+            is_terminal = item.get("is_terminal", False)
             # keep original messages and add prompt key; trainer expects "prompt"
-            converted.append({"prompt": msgs})
+            converted.append({"prompt": msgs, "is_terminal": is_terminal})
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -88,29 +95,71 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-def reward_function(completions, prompts, **kwargs):
+def reward_function(completions, prompts, is_terminal, **kwargs):
     rewards = []
 
-    original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
-    original_design = WoodDesign.from_txt(
-        original_design_text, design_type=ArbitraryCuboid
-    )
-    if original_design is None:
-        print("Design could not be processed, text was:", repr(original_design_text))
-        return [0.0] * len(completions)
+    for completion, prompt, term in zip(completions, prompts, is_terminal):
+        # Extract the assistant's content from prompt and completion to find what was generated
+        prompt_last_content = prompt[-1]["content"]
+        completion_last_content = completion[-1]["content"]
 
-    for completion in completions:
-        # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
-        # design_text = completion[0]["content"]
-        new_part_text = completion[0]["content"].splitlines()[-1]
+        # The generated text is the difference
+        if completion_last_content.startswith(prompt_last_content):
+            generated_text = completion_last_content[len(prompt_last_content) :]
+        else:
+            generated_text = completion_last_content
+
+        has_stopped = not generated_text.strip()
+
+        # CASE 1: The design is finished (Ground Truth says STOP)
+        if term:
+            if has_stopped:
+                rewards.append(1.0)  # Correctly stopped
+            else:
+                rewards.append(0.0)  # Failed to stop when it should have
+            continue
+
+        # CASE 2: The design is NOT finished (Ground Truth says CONTINUE)
+        if has_stopped:
+            rewards.append(0.0)  # Stopped prematurely
+            continue
+
+        # If we are here, the model generated a part and it was supposed to.
+        # Now we evaluate the quality of that part.
+
+        # Parse the new part
+        new_part_text = generated_text.strip().splitlines()[0]
         new_part = ArbitraryCuboid.from_text(new_part_text)
+
         if new_part is None:
-            print("New part text was:", repr(new_part_text))
+            # print("New part text was invalid:", repr(new_part_text))
+            rewards.append(0.0)
+            continue
+
+        # Reconstruct original design from prompt
+        original_design_text = prompt_last_content.strip()
+        if not original_design_text:
+            # Empty design (first part)
+            original_design = WoodDesign(parts=[], design_type=ArbitraryCuboid)
+        else:
+            original_design = WoodDesign.from_txt(
+                original_design_text, design_type=ArbitraryCuboid
+            )
+
+        if original_design is None:
+            print("Original design could not be processed")
             rewards.append(0.0)
             continue
 
         reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
-        if kwargs["trainer_state"].global_step % 1e3 == 0:
+
+        # Visualization logic (only for the first item in batch to avoid spam)
+        if (
+            kwargs.get("trainer_state")
+            and kwargs["trainer_state"].global_step % 100 == 0
+            and len(rewards) == 0
+        ):
+            # ...existing code...
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
             if idcs is not None:
                 colors = ["red" if i in idcs else "tan" for i in range(len(meshes))]
@@ -136,7 +185,6 @@ def reward_function(completions, prompts, **kwargs):
             except Exception as e:
                 print("wandb image log failed:", e)
 
-            # print("Reward for new part:", reward)
         rewards.append(reward)
 
     arr = np.array(rewards, dtype=float)
