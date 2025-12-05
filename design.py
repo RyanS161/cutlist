@@ -32,6 +32,7 @@ def visualize(
 ):
     pv.global_theme.allow_empty_mesh = True
     plotter = pv.Plotter(off_screen=filename is not None or not show_image)
+    bg_color = [0.1, 0.1, 0.15]
     if colors is None:
         # Random colors for each mesh
         colors = [POSSIBLE_COLORS[i % len(POSSIBLE_COLORS)] for i in range(len(meshes))]
@@ -56,7 +57,7 @@ def visualize(
     if text is not None:
         plotter.add_text(text, position="upper_edge", font_size=12, color="black")
 
-    plotter.set_background("white")
+    plotter.set_background(bg_color)
     plotter.camera_position = camera_position
     # Create parent directory if it doesn't exist
     if filename is not None:
@@ -73,17 +74,13 @@ def visualize(
 
 def visualize_four_panel_img(
     meshes,
-    colors=None,
-    opacities=None,
     filename=None,
-    view_size=400,
 ):
     pv.global_theme.allow_empty_mesh = True
 
-    if colors is None:
-        colors = [POSSIBLE_COLORS[i % len(POSSIBLE_COLORS)] for i in range(len(meshes))]
-    if opacities is None:
-        opacities = [1.0 for _ in range(len(meshes))]
+    view_size = (400,)
+    colors = ["tan" for i in range(len(meshes))]
+    opacities = [1.0 for _ in range(len(meshes))]
 
     # Define 4 isometric camera positions (azimuth, elevation)
     views = [
