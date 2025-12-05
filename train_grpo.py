@@ -162,7 +162,14 @@ def reward_function(completions, prompts, is_terminal, **kwargs):
             rewards.append(0.0)
             continue
 
-        reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
+        if not original_design.parts:
+            # Special case for the first part: no existing parts to compare against.
+            # Assign a default reward for a valid first part.
+            reward = 0.5
+            idcs = None
+            reward_string = "First part (default reward)"
+        else:
+            reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
 
         # Visualization logic (only for the first item in batch to avoid spam)
         if (
