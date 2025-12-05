@@ -226,7 +226,9 @@ if __name__ == "__main__":
     )
 
     training_args = GRPOConfig(
-        output_dir=MODEL_OUTPUT_DIR, max_completion_length=18, beta=0.1
+        output_dir=MODEL_OUTPUT_DIR,
+        max_completion_length=18,
+        beta=0.8,  # KL coefficient: penalizes deviation from the reference model to prevent reward hacking
     )
     trainer = GRPOTrainer(
         model=model,

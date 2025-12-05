@@ -78,7 +78,7 @@ def visualize_four_panel_img(
 ):
     pv.global_theme.allow_empty_mesh = True
 
-    view_size = (400,)
+    view_size = 400
     colors = ["tan" for i in range(len(meshes))]
     opacities = [1.0 for _ in range(len(meshes))]
 
