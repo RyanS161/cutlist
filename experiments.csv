@@ -1,0 +1,51 @@
+prompt_id,prompt,distribution,difficulty_level
+0,Rectangular dining table,in-distribution,1
+1,A bench made of two flat planks,in-distribution,1
+2,Minimalist cube-shaped side table,in-distribution,1
+3,A workbench with a thick flat top,in-distribution,1
+4,Long table with a flat trestle base,in-distribution,3
+5,Heavy table with four timber columns,in-distribution,1
+6,Chair with a solid square back panel,in-distribution,2
+7,Simple stool with a flat square seat,in-distribution,1
+8,High-backed chair with a square frame,in-distribution,2
+9,A corner chair with a triangular seat,in-distribution,3
+10,A chair with a vertical slat backrest,in-distribution,2
+11,Dining chair with X-shaped leg bracing,in-distribution,3
+12,A boxy armchair with wide flat armrests,in-distribution,2
+13,Picnic table with straight A-frame legs,in-distribution,3
+14,Narrow console table with straight legs,in-distribution,2
+15,Square pedestal table with a heavy base,in-distribution,2
+16,A throne-like chair made of large blocks,in-distribution,2
+17,A rigid chair with no decorative elements,in-distribution,2
+18,A modern desk with sharp 90-degree angles,in-distribution,2
+19,Drafting table with a flat triangular base,in-distribution,2
+20,Square table with four thick straight legs,in-distribution,2
+21,Simple Parsons table with flush square legs,in-distribution,2
+22,A jagged chair with asymmetrical angular legs,in-distribution,3
+23,Shaker-style chair with a straight ladder back,in-distribution,3
+24,Low coffee table comprising stacked wooden beams,in-distribution,1
+25,The number 4,out-of-distribution,1
+26,A minimalist cross,out-of-distribution,1
+27,A model of a guitar,out-of-distribution,3
+28,A toy truck with wheels,out-of-distribution,3
+29,A zigzag shaped bookshelf,out-of-distribution,3
+30,A boxy television set frame,out-of-distribution,2
+31,The letter E standing upright,out-of-distribution,1
+32,A pixel-art style heart shape,out-of-distribution,2
+33,A simple open crate with slats,out-of-distribution,2
+34,A Minecraft-style blocky sword,out-of-distribution,3
+35,A hexagon shelf with flat sides,out-of-distribution,3
+36,An open shelf with three shelves,out-of-distribution,2
+37,The letters ETH on a wooden base,out-of-distribution,2
+38,A simple podium for three people,out-of-distribution,1
+39,A cross made of two wooden beams,out-of-distribution,1
+40,A simple model of the Eiffel Tower,out-of-distribution,3
+41,A rigid wooden bridge with trusses,out-of-distribution,3
+42,The capital letter T made of blocks,out-of-distribution,1
+43,A small house with a triangular roof,out-of-distribution,3
+44,A staircase with five straight steps,out-of-distribution,1
+45,A birdhouse with a sharp pitched roof,out-of-distribution,3
+46,A robot toy made of rectangular boxes,out-of-distribution,3
+47,A floating wall shelf with square edges,out-of-distribution,2
+48,A pyramid made of stacked square layers,out-of-distribution,1
+49,A rectangular picture frame with wide borders,out-of-distribution,1
