@@ -31,29 +31,30 @@ def expand_example(example):
 
     new_examples = []
 
-    # First entry: assistant content is empty
-    new_msgs = non_assistant_msgs + [{"role": "assistant", "content": ""}]
-    new_examples.append({"messages": new_msgs})
-
-    if assistant_text == "":
-        return new_examples
-
     # Split into lines keeping newline characters
     lines = assistant_text.splitlines(keepends=True)
 
-    # Build cumulative assistant content entries
-    for i in range(1, len(lines)):
-        cumulative = "".join(lines[:i]).strip() + "\n"
-        new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
-        new_examples.append({"messages": new_msgs})
+    # select random line
+
+    random_idx = np.random.randint(len(lines) + 1)
+    next_brick = "EOS" if random_idx == len(lines) else lines[random_idx]
+
+    cumulative = "".join(lines[:random_idx]).strip() + "\n"
+    new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
+
+    new_examples.append({"messages": new_msgs, "next_brick": next_brick})
 
     return new_examples
 
 
 def expand_dataset(hf_dataset):
     """Expand every example in the provided HF dataset (split) and return a list of expanded examples."""
+    np.random.seed(42)
     expanded = []
-    for ex in hf_dataset:
+    shuffled_dataset = hf_dataset.shuffle(seed=42)
+    for i, ex in enumerate(shuffled_dataset):
+        if i > 1e6:
+            break
         expanded.extend(expand_example(ex))
     return expanded
 
@@ -77,7 +78,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
         for item in expanded_list:
             msgs = item.get("messages", [])
             # keep original messages and add prompt key; trainer expects "prompt"
-            converted.append({"prompt": msgs})
+            converted.append({"prompt": msgs, "next_brick": item.get("next_brick", "")})
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -88,8 +89,12 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-def reward_function(completions, prompts, **kwargs):
+def reward_function(completions, **kwargs):
     rewards = []
+    ref_next_brick_text = kwargs.get("next_brick", None)
+
+    if ref_next_brick_text is not None and ref_next_brick_text != "EOS":
+        ref_next_brick = ArbitraryCuboid.from_text(ref_next_brick_text)
 
     original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
     original_design = WoodDesign.from_txt(
@@ -99,9 +104,24 @@ def reward_function(completions, prompts, **kwargs):
         print("Design could not be processed, text was:", repr(original_design_text))
         return [0.0] * len(completions)
 
-    for completion in completions:
+    completion_ids = kwargs.get("completion_ids", None)
+    eos_token_id = kwargs["model"].tokenizer.eos_token_id
+
+    for i, completion in enumerate(completions):
         # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
         # design_text = completion[0]["content"]
+
+        if ref_next_brick == "EOS":
+            if eos_token_id in completion_ids[i]:
+                # Perfect match for end of design
+                print("Correctly predicted end of design.")
+                rewards.append(1.0)
+                continue
+            else:
+                print("Failed to predict end of design.")
+                rewards.append(0.0)
+                continue
+
         new_part_text = completion[0]["content"].splitlines()[-1]
         new_part = ArbitraryCuboid.from_text(new_part_text)
         if new_part is None:
