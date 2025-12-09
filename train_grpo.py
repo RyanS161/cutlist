@@ -1,5 +1,6 @@
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
+from transformers import AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 import os
 import json
@@ -11,6 +12,7 @@ from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
 import wandb
 
+eos_token_id = None
 
 # Replace inline expansion logic with reusable functions
 def expand_example(example):
@@ -37,7 +39,7 @@ def expand_example(example):
     # select random line
 
     random_idx = np.random.randint(len(lines) + 1)
-    next_brick = "EOS" if random_idx == len(lines) else lines[random_idx]
+    next_brick = "EOS" if random_idx == len(lines) else lines[random_idx].strip()
 
     cumulative = "".join(lines[:random_idx]).strip() + "\n"
     new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
@@ -90,9 +92,10 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
 
 
 def reward_function(completions, **kwargs):
+    global eos_token_id
     rewards = []
-    ref_next_brick_text = kwargs.get("next_brick", None)
-
+    ref_next_brick_text = kwargs.get("next_brick", None)[0]
+    print(f"REF NEXT BRICK: {ref_next_brick_text}")
     if ref_next_brick_text is not None and ref_next_brick_text != "EOS":
         ref_next_brick = ArbitraryCuboid.from_text(ref_next_brick_text)
 
@@ -105,13 +108,12 @@ def reward_function(completions, **kwargs):
         return [0.0] * len(completions)
 
     completion_ids = kwargs.get("completion_ids", None)
-    eos_token_id = kwargs["model"].tokenizer.eos_token_id
 
     for i, completion in enumerate(completions):
         # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
         # design_text = completion[0]["content"]
 
-        if ref_next_brick == "EOS":
+        if ref_next_brick_text == "EOS":
             if eos_token_id in completion_ids[i]:
                 # Perfect match for end of design
                 print("Correctly predicted end of design.")
@@ -221,10 +223,11 @@ if __name__ == "__main__":
 
     dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
-    # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
     model = AutoPeftModelForCausalLM.from_pretrained(
         ADAPTER_PATH, is_trainable=True
     )  # attach LoRA adapter weights
+    eos_token_id = tokenizer.eos_token_id
 
     device = get_device()
     model.to(device)
@@ -248,7 +251,7 @@ if __name__ == "__main__":
     training_args = GRPOConfig(
         output_dir=MODEL_OUTPUT_DIR,
         max_completion_length=18,
-        beta=0.8,  # KL coefficient: penalizes deviation from the reference model to prevent reward hacking
+        beta=0.0,  # KL coefficient: penalizes deviation from the reference model to prevent reward hacking
     )
     trainer = GRPOTrainer(
         model=model,
