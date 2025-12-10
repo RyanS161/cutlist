@@ -1,5 +1,6 @@
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
+from transformers import AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 import os
 import json
@@ -11,6 +12,7 @@ from design import WoodDesign, ArbitraryCuboid, visualize
 import argparse
 import wandb
 
+eos_token_id = None
 
 # Replace inline expansion logic with reusable functions
 def expand_example(example):
@@ -31,37 +33,30 @@ def expand_example(example):
 
     new_examples = []
 
-    # First entry: assistant content is empty
-    new_msgs = non_assistant_msgs + [{"role": "assistant", "content": ""}]
+    # Split into lines keeping newline characters
+    lines = assistant_text.splitlines(keepends=True)
 
-    # If there is no text, this is already terminal.
-    # Otherwise, it's the start of a sequence, so not terminal.
-    raw_lines = assistant_text.splitlines(keepends=True) if assistant_text else []
-    lines = [line for line in raw_lines if line.strip()]
+    # select random line
 
-    new_examples.append({"messages": new_msgs, "is_terminal": len(lines) == 0})
+    random_idx = np.random.randint(len(lines) + 1)
+    next_brick = "EOS" if random_idx == len(lines) else lines[random_idx].strip()
 
-    if not lines:
-        return new_examples
+    cumulative = "".join(lines[:random_idx]).strip() + "\n"
+    new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
 
-    # Build cumulative assistant content entries
-    # We iterate up to len(lines) + 1 to include the case where the prompt is the full design
-    for i in range(1, len(lines) + 1):
-        cumulative = "".join(lines[:i]).strip() + "\n"
-        new_msgs = non_assistant_msgs + [{"role": "assistant", "content": cumulative}]
-
-        # If i == len(lines), we have included all lines in the prompt.
-        # The expected behavior is to stop.
-        is_terminal = i == len(lines)
-        new_examples.append({"messages": new_msgs, "is_terminal": is_terminal})
+    new_examples.append({"messages": new_msgs, "next_brick": next_brick})
 
     return new_examples
 
 
 def expand_dataset(hf_dataset):
     """Expand every example in the provided HF dataset (split) and return a list of expanded examples."""
+    np.random.seed(42)
     expanded = []
-    for ex in hf_dataset:
+    shuffled_dataset = hf_dataset.shuffle(seed=42)
+    for i, ex in enumerate(shuffled_dataset):
+        if i > 1e6:
+            break
         expanded.extend(expand_example(ex))
     return expanded
 
@@ -86,7 +81,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
             msgs = item.get("messages", [])
             is_terminal = item.get("is_terminal", False)
             # keep original messages and add prompt key; trainer expects "prompt"
-            converted.append({"prompt": msgs, "is_terminal": is_terminal})
+            converted.append({"prompt": msgs, "next_brick": item.get("next_brick", "")})
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -97,71 +92,40 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-def reward_function(completions, prompts, is_terminal, **kwargs):
+def reward_function(completions, **kwargs):
+    global eos_token_id
     rewards = []
-    reward_reasons = []
-    debug_rows = []
+    ref_next_brick_text = kwargs.get("next_brick", None)[0]
+    print(f"REF NEXT BRICK: {ref_next_brick_text}")
+    if ref_next_brick_text is not None and ref_next_brick_text != "EOS":
+        ref_next_brick = ArbitraryCuboid.from_text(ref_next_brick_text)
 
-    for idx, (completion, prompt, term) in enumerate(
-        zip(completions, prompts, is_terminal)
-    ):
-        # Find the last assistant message in the prompt to get the context (partial design)
-        prompt_last_content = ""
-        for msg in reversed(prompt):
-            if msg.get("role") == "assistant":
-                prompt_last_content = msg.get("content", "")
-                break
+    original_design_text = "\n".join(completions[0][0]["content"].splitlines()[:-1])
+    original_design = WoodDesign.from_txt(
+        original_design_text, design_type=ArbitraryCuboid
+    )
+    if original_design is None:
+        print("Design could not be processed, text was:", repr(original_design_text))
+        return [0.0] * len(completions)
 
-        completion_last_content = completion[-1]["content"]
+    completion_ids = kwargs.get("completion_ids", None)
 
-        # The generated text is the difference
-        if completion_last_content.startswith(prompt_last_content):
-            generated_text = completion_last_content[len(prompt_last_content) :]
-        else:
-            generated_text = completion_last_content
+    for i, completion in enumerate(completions):
+        # print(f"Completion: --- \n\n{completion[0]['content']} \n\n--- \n\n")
+        # design_text = completion[0]["content"]
 
-        has_stopped = not generated_text.strip()
-
-        # CASE 1: The design is finished (Ground Truth says STOP)
-        if term:
-            if has_stopped:
-                reward = 1.0
-                reason = "stop_correct"
+        if ref_next_brick_text == "EOS":
+            if eos_token_id in completion_ids[i]:
+                # Perfect match for end of design
+                print("Correctly predicted end of design.")
+                rewards.append(1.0)
+                continue
             else:
-                reward = 0.0
-                reason = "stop_fail"
-            rewards.append(reward)
-            reward_reasons.append(reason)
-            debug_rows.append(
-                {
-                    "idx": idx,
-                    "term": term,
-                    "gen": generated_text[:100],
-                    "reward": reward,
-                    "reason": reason,
-                }
-            )
-            continue
+                print("Failed to predict end of design.")
+                rewards.append(0.0)
+                continue
 
-        # CASE 2: The design is NOT finished (Ground Truth says CONTINUE)
-        if has_stopped:
-            reward = 0.0
-            reason = "stop_premature"
-            rewards.append(reward)
-            reward_reasons.append(reason)
-            debug_rows.append(
-                {
-                    "idx": idx,
-                    "term": term,
-                    "gen": generated_text[:100],
-                    "reward": reward,
-                    "reason": reason,
-                }
-            )
-            continue
-
-        # Parse the new part
-        new_part_text = generated_text.strip().splitlines()[0]
+        new_part_text = completion[0]["content"].splitlines()[-1]
         new_part = ArbitraryCuboid.from_text(new_part_text)
 
         if new_part is None:
@@ -329,10 +293,11 @@ if __name__ == "__main__":
 
     dataset = load_dataset(RL_DATA_DIR, split="train").shuffle(seed=42)
 
-    # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH, use_fast=True)
     model = AutoPeftModelForCausalLM.from_pretrained(
         ADAPTER_PATH, is_trainable=True
     )  # attach LoRA adapter weights
+    eos_token_id = tokenizer.eos_token_id
 
     device = get_device()
     model.to(device)
@@ -356,7 +321,7 @@ if __name__ == "__main__":
     training_args = GRPOConfig(
         output_dir=MODEL_OUTPUT_DIR,
         max_completion_length=18,
-        beta=0.8,  # KL coefficient: penalizes deviation from the reference model to prevent reward hacking
+        beta=0.0,  # KL coefficient: penalizes deviation from the reference model to prevent reward hacking
     )
     trainer = GRPOTrainer(
         model=model,
