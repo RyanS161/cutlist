@@ -79,6 +79,7 @@ def expand_and_save(dataset_path, splits=("train", "test"), output_dir=None):
         converted = []
         for item in expanded_list:
             msgs = item.get("messages", [])
+            is_terminal = item.get("is_terminal", False)
             # keep original messages and add prompt key; trainer expects "prompt"
             converted.append({"prompt": msgs, "next_brick": item.get("next_brick", "")})
 
@@ -126,13 +127,63 @@ def reward_function(completions, **kwargs):
 
         new_part_text = completion[0]["content"].splitlines()[-1]
         new_part = ArbitraryCuboid.from_text(new_part_text)
+
         if new_part is None:
-            print("New part text was:", repr(new_part_text))
-            rewards.append(0.0)
+            reward = 0.0
+            reason = "invalid_syntax"
+            rewards.append(reward)
+            reward_reasons.append(reason)
+            debug_rows.append(
+                {
+                    "idx": idx,
+                    "term": term,
+                    "gen": generated_text[:100],
+                    "reward": reward,
+                    "reason": reason,
+                }
+            )
             continue
 
-        reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
-        if kwargs["trainer_state"].global_step % 1e3 == 0:
+        # Reconstruct original design from prompt
+        original_design_text = prompt_last_content.strip()
+        if not original_design_text:
+            original_design = WoodDesign(parts=[], design_type=ArbitraryCuboid)
+        else:
+            original_design = WoodDesign.from_txt(
+                original_design_text, design_type=ArbitraryCuboid
+            )
+
+        if original_design is None:
+            reward = 0.0
+            reason = "error_parsing_prompt"
+            rewards.append(reward)
+            reward_reasons.append(reason)
+            debug_rows.append(
+                {
+                    "idx": idx,
+                    "term": term,
+                    "gen": generated_text[:100],
+                    "reward": reward,
+                    "reason": reason,
+                }
+            )
+            continue
+
+        if not original_design.parts:
+            reward = 0.5
+            idcs = None
+            reward_string = "First part (default reward)"
+            reason = "first_part"
+        else:
+            reward, idcs, reward_string = reward_for_new_part(original_design, new_part)
+            reason = "geometry_score"
+
+        # Visualization logic (only for the first item in batch to avoid spam)
+        if (
+            kwargs.get("trainer_state")
+            and kwargs["trainer_state"].global_step % 100 == 0
+            and len(rewards) == 0
+        ):
             meshes = [design_part.get_mesh() for design_part in original_design.parts]
             if idcs is not None:
                 colors = ["red" if i in idcs else "tan" for i in range(len(meshes))]
@@ -153,17 +204,36 @@ def reward_function(completions, **kwargs):
                                 image, caption=f"Reward {reward:.4f}"
                             )
                         },
-                        # step=int(kwargs["trainer_state"].global_step),
                     )
             except Exception as e:
                 print("wandb image log failed:", e)
 
-            # print("Reward for new part:", reward)
         rewards.append(reward)
+        reward_reasons.append(reason)
+        debug_rows.append(
+            {
+                "idx": idx,
+                "term": term,
+                "gen": generated_text[:100],
+                "reward": reward,
+                "reason": reason,
+            }
+        )
 
     arr = np.array(rewards, dtype=float)
+    unique_reasons, reason_counts = np.unique(reward_reasons, return_counts=True)
+    reason_dict = dict(zip(unique_reasons, reason_counts.tolist()))
+
+    # Debug: if all rewards are identical, print detailed info
+    if arr.size > 0 and arr.std() == 0.0:
+        print("DEBUG: reward std == 0. First 6 examples:")
+        for row in debug_rows[:6]:
+            print(
+                f"  idx={row['idx']} term={row['term']} reward={row['reward']:.4f} reason={row['reason']} gen={repr(row['gen'])}"
+            )
+
     print(
-        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} sample={arr[:6].tolist()}"
+        f"REWARD BATCH mean={arr.mean():.4f} std={arr.std():.4f} reasons={reason_dict}"
     )
 
     return rewards
